@@ -20,7 +20,7 @@ M-Pad is a lightweight, blazing-fast text companion built using Python and PyQt6
 
 1. **Clone the Repository:**
    ```bash
-   git clone https://github.com/themix88/M-Pad.git
+   git clone https://github.com/themix88/M-Pad-Notes.git
    cd M-Pad
    ```
 

@@ -5,10 +5,10 @@ pkgver=1.0
 pkgrel=1
 pkgdesc="A lightweight text companion."
 arch=('any')
-url="https://github.com/themix88/M-Pad"
+url="https://github.com/themix88/M-Pad-Notes"
 license=('GPL3')
 depends=('python' 'python-pyqt6')
-source=("git+https://github.com/themix88/M-Pad.git")
+source=("git+https://github.com/themix88/M-Pad-Notes.git")
 md5sums=('SKIP')
 
 package() {

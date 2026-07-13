@@ -12,7 +12,7 @@ source=("git+https://github.com/themix88/M-Pad-Notes.git")
 md5sums=('SKIP')
 
 package() {
-    cd "${srcdir}/M-Pad"
+    cd "${srcdir}/M-Pad-Notes"
 
     # Install the application code
     install -d "${pkgdir}/opt/${pkgname}"

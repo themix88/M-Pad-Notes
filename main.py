@@ -863,7 +863,7 @@ class PlainNotepad(QMainWindow):
         dark = self._detect_system_dark() if mode == "auto" else (mode == "dark")
 
         QApplication.instance().setStyleSheet(
-            DARK_GLASS_QSS if dark else LIGHT_GLASS_QSS)
+            DARK_THEME_QSS if dark else LIGHT_THEME_QSS)
 
         # Gutter colours in all open editors
         for i in range(self.tab_widget.count()):

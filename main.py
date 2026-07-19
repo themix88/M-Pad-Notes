@@ -1,18 +1,20 @@
 import os
 import sys
+import json
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QTextEdit, QTabWidget,
     QFileDialog, QMessageBox, QFontDialog, QTreeView,
     QDockWidget, QInputDialog, QMenu, QToolBar,
     QLabel, QStatusBar, QWidget, QSizePolicy,
     QFontComboBox, QSpinBox, QVBoxLayout, QHBoxLayout,
-    QFrame, QToolButton,
+    QFrame, QToolButton, QDialog, QCheckBox, QComboBox,
+    QGroupBox, QDialogButtonBox, QGridLayout,
 )
 from PyQt6.QtGui import (
     QAction, QKeySequence, QFont, QTextCharFormat, QFileSystemModel,
     QPainter, QColor,
 )
-from PyQt6.QtCore import Qt, QSize, QRect
+from PyQt6.QtCore import Qt, QSize, QRect, QSettings, QTimer, QByteArray
 
 # ─── File-explorer column indices ─────────────────────────────────────────────
 COL_NAME, COL_SIZE, COL_TYPE, COL_DATE = 0, 1, 2, 3
@@ -358,6 +360,42 @@ QPushButton:pressed {
 QPushButton:default { border-color: rgba(10, 132, 255, 0.80); }
 QMessageBox { background: #1E1E30; }
 QMessageBox QLabel { color: rgba(255, 255, 255, 0.90); }
+
+/* ── Dialog / Settings ────────────────────────────────────────────────────── */
+QDialog { background: #1E1E30; }
+QGroupBox {
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 8px;
+    margin-top: 14px;
+    padding: 16px 12px 12px 12px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.72);
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 12px;
+    padding: 0 6px;
+    color: rgba(255, 255, 255, 0.52);
+}
+QCheckBox {
+    spacing: 8px;
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 12px;
+}
+QCheckBox::indicator {
+    width: 16px; height: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.20);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.06);
+}
+QCheckBox::indicator:checked {
+    background: #0A84FF;
+    border-color: #0A84FF;
+}
+QCheckBox::indicator:hover {
+    border-color: rgba(255, 255, 255, 0.35);
+}
 """
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -665,7 +703,182 @@ QPushButton:pressed {
 QPushButton:default { border-color: rgba(0, 122, 255, 0.72); }
 QMessageBox { background: #FFFFFF; }
 QMessageBox QLabel { color: #1C1C1E; }
+
+/* ── Dialog / Settings ────────────────────────────────────────────────────── */
+QDialog { background: #F2F2F7; }
+QGroupBox {
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    border-radius: 8px;
+    margin-top: 14px;
+    padding: 16px 12px 12px 12px;
+    font-weight: 600;
+    color: #3C3C3E;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 12px;
+    padding: 0 6px;
+    color: #8E8E93;
+}
+QCheckBox {
+    spacing: 8px;
+    color: #1C1C1E;
+    font-size: 12px;
+}
+QCheckBox::indicator {
+    width: 16px; height: 16px;
+    border: 1px solid rgba(0, 0, 0, 0.18);
+    border-radius: 4px;
+    background: #FFFFFF;
+}
+QCheckBox::indicator:checked {
+    background: #007AFF;
+    border-color: #007AFF;
+}
+QCheckBox::indicator:hover {
+    border-color: rgba(0, 0, 0, 0.30);
+}
 """
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Settings defaults
+# ─────────────────────────────────────────────────────────────────────────────
+DEFAULT_SETTINGS = {
+    "theme_mode": "dark",
+    "restore_layout": True,
+    "restore_explorer_state": True,
+    "restore_sidebar_state": True,
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Settings Dialog
+# ─────────────────────────────────────────────────────────────────────────────
+
+class SettingsDialog(QDialog):
+    """Extensible settings dialog with tabbed sections."""
+
+    def __init__(self, parent=None, current_settings=None):
+        super().__init__(parent)
+        self.setWindowTitle("Settings")
+        self.setMinimumSize(480, 380)
+        self._settings = dict(current_settings or DEFAULT_SETTINGS)
+        self._build_ui()
+
+    # ── UI Construction ───────────────────────────────────────────────────
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 16)
+        layout.setSpacing(16)
+
+        # Title
+        title = QLabel("Settings")
+        title.setStyleSheet("font-size: 18px; font-weight: 700; padding-bottom: 4px;")
+        layout.addWidget(title)
+
+        # Tab widget for setting sections
+        self._tab_widget = QTabWidget()
+        layout.addWidget(self._tab_widget)
+
+        self._build_appearance_tab()
+        self._build_layout_tab()
+
+        # Dialog buttons
+        btn_box = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok |
+            QDialogButtonBox.StandardButton.Cancel |
+            QDialogButtonBox.StandardButton.RestoreDefaults
+        )
+        btn_box.accepted.connect(self.accept)
+        btn_box.rejected.connect(self.reject)
+        btn_box.button(QDialogButtonBox.StandardButton.RestoreDefaults).clicked.connect(
+            self._restore_defaults)
+        layout.addWidget(btn_box)
+
+    def _build_appearance_tab(self):
+        page = QWidget()
+        vbox = QVBoxLayout(page)
+        vbox.setContentsMargins(12, 16, 12, 12)
+        vbox.setSpacing(12)
+
+        # ── Theme ─────────────────────────────────────────────────────────
+        grp = QGroupBox("Theme")
+        grid = QGridLayout(grp)
+        grid.setContentsMargins(12, 16, 12, 12)
+        grid.setVerticalSpacing(10)
+
+        grid.addWidget(QLabel("Color theme:"), 0, 0)
+        self._theme_combo = QComboBox()
+        self._theme_combo.addItems(["Dark", "Light", "Auto (follow system)"])
+        mode = self._settings.get("theme_mode", "dark")
+        idx_map = {"dark": 0, "light": 1, "auto": 2}
+        self._theme_combo.setCurrentIndex(idx_map.get(mode, 0))
+        grid.addWidget(self._theme_combo, 0, 1)
+
+        vbox.addWidget(grp)
+        vbox.addStretch()
+
+        self._tab_widget.addTab(page, "Appearance")
+
+    def _build_layout_tab(self):
+        page = QWidget()
+        vbox = QVBoxLayout(page)
+        vbox.setContentsMargins(12, 16, 12, 12)
+        vbox.setSpacing(12)
+
+        # ── Window & Dock persistence ─────────────────────────────────────
+        grp = QGroupBox("Persistence")
+        gvbox = QVBoxLayout(grp)
+        gvbox.setContentsMargins(12, 16, 12, 12)
+        gvbox.setSpacing(10)
+
+        self._restore_layout_cb = QCheckBox(
+            "Remember window size, position, and dock layout on restart")
+        self._restore_layout_cb.setChecked(
+            self._settings.get("restore_layout", True))
+        gvbox.addWidget(self._restore_layout_cb)
+
+        self._restore_explorer_cb = QCheckBox(
+            "Remember Explorer dock visibility and position")
+        self._restore_explorer_cb.setChecked(
+            self._settings.get("restore_explorer_state", True))
+        gvbox.addWidget(self._restore_explorer_cb)
+
+        self._restore_sidebar_cb = QCheckBox(
+            "Remember Format Sidebar visibility and position")
+        self._restore_sidebar_cb.setChecked(
+            self._settings.get("restore_sidebar_state", True))
+        gvbox.addWidget(self._restore_sidebar_cb)
+
+        vbox.addWidget(grp)
+        vbox.addStretch()
+
+        self._tab_widget.addTab(page, "Layout")
+
+    def _add_new_tab(self, name, widget):
+        """Public helper to allow extending the settings dialog with new tabs."""
+        self._tab_widget.addTab(widget, name)
+
+    # ── Data access ───────────────────────────────────────────────────────
+
+    def get_settings(self) -> dict:
+        """Return the current settings dict (call after accept)."""
+        mode_map = {0: "dark", 1: "light", 2: "auto"}
+        return {
+            "theme_mode": mode_map.get(self._theme_combo.currentIndex(), "dark"),
+            "restore_layout": self._restore_layout_cb.isChecked(),
+            "restore_explorer_state": self._restore_explorer_cb.isChecked(),
+            "restore_sidebar_state": self._restore_sidebar_cb.isChecked(),
+        }
+
+    def _restore_defaults(self):
+        self._settings = dict(DEFAULT_SETTINGS)
+        self._theme_combo.setCurrentIndex(0)
+        self._restore_layout_cb.setChecked(True)
+        self._restore_explorer_cb.setChecked(True)
+        self._restore_sidebar_cb.setChecked(True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -816,6 +1029,12 @@ class PlainNotepad(QMainWindow):
         self.setWindowTitle("M-Pad")
         self.resize(1100, 680)
 
+        # ── Persistent settings (QSettings) ────────────────────────────────
+        self._qsettings = QSettings("M-Pad", "M-Pad")
+        self._prefs = self._load_settings()
+        self._theme_mode = self._prefs.get("theme_mode", "dark")
+        self._last_system_dark = self._detect_system_dark()
+
         # ── Central tab widget ─────────────────────────────────────────────
         self.tab_widget = QTabWidget()
         self.tab_widget.setTabsClosable(True)
@@ -825,17 +1044,19 @@ class PlainNotepad(QMainWindow):
         self.setCentralWidget(self.tab_widget)
 
         # ── Build UI ───────────────────────────────────────────────────────
-        self._theme_mode = "dark"       # default dark
         self._create_format_actions()
+        self._build_explorer()
+        self._build_format_panel()
         self._build_menu()
         self._build_toolbar()
         self._build_status_bar()
-        self._build_explorer()
-        self._build_format_panel()
 
-        # Apply initial theme (dark by default)
+        # Apply initial theme
         self._apply_theme()
         self.new_file()
+
+        # ── Restore layout from settings if enabled ────────────────────────
+        self._restore_layout()
 
         # Connect to OS color-scheme changes (Qt 6.5+, safe fallback)
         try:
@@ -843,6 +1064,97 @@ class PlainNotepad(QMainWindow):
                 self._on_system_scheme_changed)
         except AttributeError:
             pass
+
+        # Timer-based poll for auto mode (catches systems where the signal
+        # doesn't fire, e.g. some Linux DEs). Fires every 2 seconds and is
+        # cheap — it only re-applies the theme when the scheme actually
+        # changes.
+        self._auto_poll_timer = QTimer(self)
+        self._auto_poll_timer.setInterval(2000)
+        self._auto_poll_timer.timeout.connect(self._poll_system_theme)
+        if self._theme_mode == "auto":
+            self._auto_poll_timer.start()
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # Settings persistence
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def _load_settings(self) -> dict:
+        """Load user preferences from QSettings (INI-backed)."""
+        prefs = dict(DEFAULT_SETTINGS)
+        raw = self._qsettings.value("user_prefs")
+        if raw:
+            try:
+                loaded = json.loads(raw) if isinstance(raw, str) else raw
+                prefs.update(loaded)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return prefs
+
+    def _save_settings(self):
+        """Persist current preferences to QSettings."""
+        self._qsettings.setValue("user_prefs", json.dumps(self._prefs))
+        self._qsettings.sync()
+
+    def _save_layout(self):
+        """Save window geometry and dock widget state."""
+        self._qsettings.setValue("window_geometry", self.saveGeometry())
+        self._qsettings.setValue("window_state", self.saveState())
+        self._qsettings.setValue("explorer_visible", self.file_dock.isVisible())
+        self._qsettings.setValue("sidebar_visible", self.format_dock.isVisible())
+        self._qsettings.sync()
+
+    def _restore_layout(self):
+        """Restore window geometry and dock state from QSettings (if enabled)."""
+        if not self._prefs.get("restore_layout", True):
+            return
+
+        geom = self._qsettings.value("window_geometry")
+        if geom and isinstance(geom, QByteArray):
+            self.restoreGeometry(geom)
+
+        state = self._qsettings.value("window_state")
+        if state and isinstance(state, QByteArray):
+            self.restoreState(state)
+
+        # Restore dock visibility per preference
+        if self._prefs.get("restore_explorer_state", True):
+            vis = self._qsettings.value("explorer_visible", False)
+            self.file_dock.setVisible(
+                vis == "true" or vis is True if isinstance(vis, (str, bool)) else False)
+        else:
+            self.file_dock.hide()
+
+        if self._prefs.get("restore_sidebar_state", True):
+            vis = self._qsettings.value("sidebar_visible", False)
+            self.format_dock.setVisible(
+                vis == "true" or vis is True if isinstance(vis, (str, bool)) else False)
+        else:
+            self.format_dock.hide()
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # Settings dialog
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def open_settings(self):
+        """Show the Settings dialog and apply changes on accept."""
+        dlg = SettingsDialog(self, current_settings=self._prefs)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            new_prefs = dlg.get_settings()
+            old_theme = self._theme_mode
+            self._prefs = new_prefs
+            self._theme_mode = new_prefs["theme_mode"]
+            self._save_settings()
+
+            # Re-apply theme if it changed
+            if self._theme_mode != old_theme:
+                self._apply_theme()
+
+            # Start/stop auto-poll timer based on mode
+            if self._theme_mode == "auto":
+                self._auto_poll_timer.start()
+            else:
+                self._auto_poll_timer.stop()
 
     # ══════════════════════════════════════════════════════════════════════════
     # Theme management
@@ -879,10 +1191,27 @@ class PlainNotepad(QMainWindow):
 
     def _cycle_theme(self, _checked=False):
         self._theme_mode = self._THEME_CYCLE[self._theme_mode]
+        self._prefs["theme_mode"] = self._theme_mode
+        self._save_settings()
         self._apply_theme()
+        # Manage auto-poll timer
+        if self._theme_mode == "auto":
+            self._auto_poll_timer.start()
+        else:
+            self._auto_poll_timer.stop()
 
     def _on_system_scheme_changed(self):
         if self._theme_mode == "auto":
+            self._last_system_dark = self._detect_system_dark()
+            self._apply_theme()
+
+    def _poll_system_theme(self):
+        """Timer callback: re-apply theme if the OS scheme changed since last check."""
+        if self._theme_mode != "auto":
+            return
+        current = self._detect_system_dark()
+        if current != self._last_system_dark:
+            self._last_system_dark = current
             self._apply_theme()
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -919,9 +1248,9 @@ class PlainNotepad(QMainWindow):
         file_menu = mb.addMenu("File")
         self._make_action(file_menu, "New",
                           QKeySequence.StandardKey.New, self.new_file)
-        self._make_action(file_menu, "Open\u2026",
+        self._make_action(file_menu, "Open File\u2026",
                           QKeySequence.StandardKey.Open, self.open_file)
-        self._make_action(file_menu, "Open Folder\u2026",
+        self._make_action(file_menu, "Open Project Folder\u2026",
                           callback=self.open_folder)
         file_menu.addSeparator()
         self._make_action(file_menu, "Save",
@@ -945,40 +1274,38 @@ class PlainNotepad(QMainWindow):
                           QKeySequence.StandardKey.Copy,  self._editor_copy)
         self._make_action(edit_menu, "Paste",
                           QKeySequence.StandardKey.Paste, self._editor_paste)
+        edit_menu.addSeparator()
+        self._make_action(edit_menu, "Settings\u2026",
+                          QKeySequence("Ctrl+,"), self.open_settings)
 
-        # ── About ─────────────────────────────────────────────────────────
-        about_menu = mb.addMenu("About")
-        self._make_action(about_menu, "About M-Pad",
+        # ── View ──────────────────────────────────────────────────────────
+        view_menu = mb.addMenu("View")
+        exp_toggle = self.file_dock.toggleViewAction()
+        exp_toggle.setText("Explorer")
+        exp_toggle.setShortcut(QKeySequence("Ctrl+Shift+E"))
+        view_menu.addAction(exp_toggle)
+
+        sb_toggle = self.format_dock.toggleViewAction()
+        sb_toggle.setText("Format Sidebar")
+        sb_toggle.setShortcut(QKeySequence("Ctrl+Shift+F"))
+        view_menu.addAction(sb_toggle)
+
+        view_menu.addSeparator()
+        self._make_action(view_menu, "Save Layout Now",
+                          callback=self._manual_save_layout)
+
+        # ── Help ──────────────────────────────────────────────────────────
+        help_menu = mb.addMenu("Help")
+        self._make_action(help_menu, "About M-Pad",
                           callback=self.show_about_dialog)
 
     def _build_toolbar(self):
         tb = QToolBar("Main Toolbar", self)
+        tb.setObjectName("mainToolBar")
         tb.setMovable(False)
         tb.setFloatable(False)
         tb.setIconSize(QSize(16, 16))
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, tb)
-
-        # ── File ──────────────────────────────────────────────────────────
-        tb.addAction(self._make_tb_action(
-            "\uff0b  New",  self.new_file,  "New file  (Ctrl+N)"))
-        tb.addAction(self._make_tb_action(
-            "\u2302  Open", self.open_file, "Open file  (Ctrl+O)"))
-        tb.addAction(self._make_tb_action(
-            "\u2193  Save", self.save_file, "Save  (Ctrl+S)"))
-        tb.addSeparator()
-
-        # ── Format (shared QAction objects) ───────────────────────────────
-        self.bold_action.setToolTip("Bold  (Ctrl+B)")
-        self.italic_action.setToolTip("Italic  (Ctrl+I)")
-        self.underline_action.setToolTip("Underline  (Ctrl+U)")
-        for act, extra in [
-            (self.bold_action,      "font-weight:800; font-size:14px;"),
-            (self.italic_action,    "font-style:italic; font-size:14px;"),
-            (self.underline_action, "text-decoration:underline; font-size:14px;"),
-        ]:
-            tb.addAction(act)
-            if w := tb.widgetForAction(act):
-                w.setStyleSheet(w.styleSheet() + extra)
 
         # ── Spacer ────────────────────────────────────────────────────────
         spacer = QWidget()
@@ -997,13 +1324,13 @@ class PlainNotepad(QMainWindow):
         # ── Dock toggles ──────────────────────────────────────────────────
         self._explorer_tb_action = self._make_tb_action(
             "\u2318  Explorer", self._toggle_explorer,
-            "Toggle file explorer  (Ctrl+\\)", checkable=True)
+            "Toggle file explorer  (Ctrl+Shift+E)", checkable=True)
         self._explorer_tb_action.setChecked(False)
         tb.addAction(self._explorer_tb_action)
 
         self._sidebar_tb_action = self._make_tb_action(
             "\u2630  Sidebar", self._toggle_sidebar,
-            "Toggle format sidebar", checkable=True)
+            "Toggle format sidebar  (Ctrl+Shift+S)", checkable=True)
         self._sidebar_tb_action.setChecked(False)
         tb.addAction(self._sidebar_tb_action)
 
@@ -1046,11 +1373,12 @@ class PlainNotepad(QMainWindow):
         header.customContextMenuRequested.connect(self.on_header_context_menu)
 
         self.file_dock = QDockWidget("Explorer", self)
+        self.file_dock.setObjectName("explorerDock")
         self.file_dock.setWidget(self.tree_view)
         self.file_dock.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
         self.file_dock.setMinimumWidth(200)
         self.file_dock.visibilityChanged.connect(self._sync_explorer_action)
-        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.file_dock)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.file_dock)
         self.file_dock.hide()
 
     def _build_format_panel(self):
@@ -1135,17 +1463,45 @@ class PlainNotepad(QMainWindow):
         layout.addWidget(section_lbl("Alignment"))
         layout.addSpacing(6)
 
+        def _make_align_icon(widths, align_mode):
+            from PyQt6.QtGui import QPixmap, QIcon
+            sz = 24
+            pm = QPixmap(sz, sz)
+            pm.fill(QColor(0, 0, 0, 0))
+            p = QPainter(pm)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            bar_h = 2
+            gap = 6
+            total_h = 3 * bar_h + 2 * gap
+            y0 = (sz - total_h) // 2
+            for i, w in enumerate(widths):
+                y = y0 + i * (bar_h + gap)
+                if align_mode == "left":
+                    x = 3
+                elif align_mode == "right":
+                    x = sz - 3 - w
+                elif align_mode == "center":
+                    x = (sz - w) // 2
+                else:  # justify
+                    x = 3
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QColor(255, 255, 255, 200))
+                p.drawRoundedRect(x, y, w, bar_h, 1, 1)
+            p.end()
+            return QIcon(pm)
+
         align_row = QHBoxLayout()
         align_row.setSpacing(6)
         self._align_btns = []
-        for symbol, alignment, tip in [
-            ("L",  Qt.AlignmentFlag.AlignLeft,    "Align left"),
-            ("C",  Qt.AlignmentFlag.AlignHCenter, "Center"),
-            ("R",  Qt.AlignmentFlag.AlignRight,   "Align right"),
-            ("J",  Qt.AlignmentFlag.AlignJustify, "Justify"),
+        for icon, alignment, tip in [
+            (_make_align_icon([18, 12, 16], "left"),   Qt.AlignmentFlag.AlignLeft,    "Align left"),
+            (_make_align_icon([14, 18, 12], "center"), Qt.AlignmentFlag.AlignHCenter, "Center"),
+            (_make_align_icon([16, 12, 18], "right"),  Qt.AlignmentFlag.AlignRight,   "Align right"),
+            (_make_align_icon([18, 18, 18], "left"),   Qt.AlignmentFlag.AlignJustify, "Justify"),
         ]:
             btn = QToolButton()
-            btn.setText(symbol)
+            btn.setIcon(icon)
+            btn.setIconSize(QSize(24, 24))
             btn.setToolTip(tip)
             btn.setCheckable(True)
             btn.setFixedSize(42, 42)
@@ -1159,10 +1515,9 @@ class PlainNotepad(QMainWindow):
         layout.addStretch()
 
         self.format_dock = QDockWidget("Sidebar", self)
+        self.format_dock.setObjectName("formatSidebarDock")
         self.format_dock.setWidget(panel)
-        self.format_dock.setAllowedAreas(
-            Qt.DockWidgetArea.RightDockWidgetArea |
-            Qt.DockWidgetArea.LeftDockWidgetArea)
+        self.format_dock.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
         self.format_dock.setMinimumWidth(220)
         self.format_dock.setMaximumWidth(300)
         self.format_dock.visibilityChanged.connect(self._sync_sidebar_action)
@@ -1281,6 +1636,8 @@ class PlainNotepad(QMainWindow):
         if path:
             self.file_model.setRootPath(path)
             self.tree_view.setRootIndex(self.file_model.index(path))
+            if not self.file_dock.isVisible():
+                self.file_dock.show()
 
     def on_tree_double_clicked(self, index):
         path = self.file_model.filePath(index)
@@ -1515,10 +1872,17 @@ class PlainNotepad(QMainWindow):
     def _toggle_sidebar(self, checked):  self.format_dock.setVisible(checked)
 
     def _sync_explorer_action(self, visible):
-        self._explorer_tb_action.setChecked(visible)
+        if hasattr(self, '_explorer_tb_action'):
+            self._explorer_tb_action.setChecked(visible)
 
     def _sync_sidebar_action(self, visible):
-        self._sidebar_tb_action.setChecked(visible)
+        if hasattr(self, '_sidebar_tb_action'):
+            self._sidebar_tb_action.setChecked(visible)
+
+    def _manual_save_layout(self):
+        """Explicitly save the current layout (View → Save Layout Now)."""
+        self._save_layout()
+        self.statusBar().showMessage("Layout saved.", 3000)
 
     # ══════════════════════════════════════════════════════════════════════════
     # Lifecycle
@@ -1551,6 +1915,12 @@ class PlainNotepad(QMainWindow):
             if res == QMessageBox.StandardButton.No:
                 event.ignore()
                 return
+
+        # Persist layout and settings on exit
+        if self._prefs.get("restore_layout", True):
+            self._save_layout()
+        self._save_settings()
+
         event.accept()
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -1560,7 +1930,7 @@ class PlainNotepad(QMainWindow):
     def show_about_dialog(self):
         QMessageBox.about(
             self, "About M-Pad",
-            "<h3>M-Pad v1.0</h3>"
+            "<h3>M-Pad v1.1</h3>"
             "<p>A lightweight text companion.</p>"
             "<hr>"
             "<p><b>Created by</b>: <i>Miran Kljun</i></p>"

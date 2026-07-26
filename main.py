@@ -16,7 +16,6 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtCore import Qt, QSize, QRect, QSettings, QTimer, QByteArray
 
-# ─── File-explorer column indices ─────────────────────────────────────────────
 COL_NAME, COL_SIZE, COL_TYPE, COL_DATE = 0, 1, 2, 3
 COLUMN_LABELS = {
     COL_NAME: "Name",
@@ -752,12 +751,12 @@ DEFAULT_SETTINGS = {
     "restore_sidebar_state": True,
 }
 
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Settings Dialog
 # ─────────────────────────────────────────────────────────────────────────────
 
 class SettingsDialog(QDialog):
-    """Extensible settings dialog with tabbed sections."""
 
     def __init__(self, parent=None, current_settings=None):
         super().__init__(parent)
@@ -766,26 +765,21 @@ class SettingsDialog(QDialog):
         self._settings = dict(current_settings or DEFAULT_SETTINGS)
         self._build_ui()
 
-    # ── UI Construction ───────────────────────────────────────────────────
-
     def _build_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 16)
         layout.setSpacing(16)
 
-        # Title
         title = QLabel("Settings")
         title.setStyleSheet("font-size: 18px; font-weight: 700; padding-bottom: 4px;")
         layout.addWidget(title)
 
-        # Tab widget for setting sections
         self._tab_widget = QTabWidget()
         layout.addWidget(self._tab_widget)
 
         self._build_appearance_tab()
         self._build_layout_tab()
 
-        # Dialog buttons
         btn_box = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok |
             QDialogButtonBox.StandardButton.Cancel |
@@ -803,7 +797,6 @@ class SettingsDialog(QDialog):
         vbox.setContentsMargins(12, 16, 12, 12)
         vbox.setSpacing(12)
 
-        # ── Theme ─────────────────────────────────────────────────────────
         grp = QGroupBox("Theme")
         grid = QGridLayout(grp)
         grid.setContentsMargins(12, 16, 12, 12)
@@ -828,7 +821,6 @@ class SettingsDialog(QDialog):
         vbox.setContentsMargins(12, 16, 12, 12)
         vbox.setSpacing(12)
 
-        # ── Window & Dock persistence ─────────────────────────────────────
         grp = QGroupBox("Persistence")
         gvbox = QVBoxLayout(grp)
         gvbox.setContentsMargins(12, 16, 12, 12)
@@ -858,13 +850,9 @@ class SettingsDialog(QDialog):
         self._tab_widget.addTab(page, "Layout")
 
     def _add_new_tab(self, name, widget):
-        """Public helper to allow extending the settings dialog with new tabs."""
         self._tab_widget.addTab(widget, name)
 
-    # ── Data access ───────────────────────────────────────────────────────
-
     def get_settings(self) -> dict:
-        """Return the current settings dict (call after accept)."""
         mode_map = {0: "dark", 1: "light", 2: "auto"}
         return {
             "theme_mode": mode_map.get(self._theme_combo.currentIndex(), "dark"),
@@ -886,7 +874,6 @@ class SettingsDialog(QDialog):
 # ─────────────────────────────────────────────────────────────────────────────
 
 class LineNumberArea(QWidget):
-    """Thin widget rendered inside CodeEditor that paints line numbers."""
 
     def __init__(self, editor: "CodeEditor"):
         super().__init__(editor)
@@ -900,7 +887,6 @@ class LineNumberArea(QWidget):
 
 
 class CodeEditor(QTextEdit):
-    """QTextEdit with a sticky line-number gutter and theme-aware gutter colors."""
 
     _GUTTER_RIGHT_PAD = 8
     _GUTTER_LEFT_PAD  = 10
@@ -909,7 +895,7 @@ class CodeEditor(QTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._lna         = LineNumberArea(self)
-        self._gutter_dark = True        # synced by PlainNotepad._apply_theme()
+        self._gutter_dark = True
         self.document().setDocumentMargin(self._DOC_MARGIN)
 
         self.document().blockCountChanged.connect(self._refresh_gutter_width)
@@ -918,8 +904,6 @@ class CodeEditor(QTextEdit):
         self.cursorPositionChanged.connect(self._lna.update)
 
         self._refresh_gutter_width()
-
-    # ── Geometry ───────────────────────────────────────────────────────────
 
     def gutter_width(self) -> int:
         digits = max(3, len(str(max(1, self.document().blockCount()))))
@@ -938,13 +922,10 @@ class CodeEditor(QTextEdit):
         cr = self.contentsRect()
         self._lna.setGeometry(QRect(cr.left(), cr.top(), self.gutter_width(), cr.height()))
 
-    # ── Painting ───────────────────────────────────────────────────────────
-
     def paint_line_numbers(self, event):
         painter = QPainter(self._lna)
         dark = self._gutter_dark
 
-        # Colors adapt to current theme
         if dark:
             c_bg         = QColor(13, 13, 24)
             c_sep        = QColor(255, 255, 255, 18)
@@ -1010,7 +991,6 @@ class CodeEditor(QTextEdit):
 
 class PlainNotepad(QMainWindow):
 
-    # Theme mode labels / tooltips  (cycles: dark → light → auto → dark)
     _THEME_CYCLE = {"dark": "light", "light": "auto", "auto": "dark"}
     _THEME_LABELS = {
         "dark":  "☾  Dark",
@@ -1029,13 +1009,11 @@ class PlainNotepad(QMainWindow):
         self.setWindowTitle("M-Pad")
         self.resize(1100, 680)
 
-        # ── Persistent settings (QSettings) ────────────────────────────────
         self._qsettings = QSettings("M-Pad", "M-Pad")
         self._prefs = self._load_settings()
         self._theme_mode = self._prefs.get("theme_mode", "dark")
         self._last_system_dark = self._detect_system_dark()
 
-        # ── Central tab widget ─────────────────────────────────────────────
         self.tab_widget = QTabWidget()
         self.tab_widget.setTabsClosable(True)
         self.tab_widget.setDocumentMode(True)
@@ -1043,7 +1021,6 @@ class PlainNotepad(QMainWindow):
         self.tab_widget.currentChanged.connect(self._on_tab_changed)
         self.setCentralWidget(self.tab_widget)
 
-        # ── Build UI ───────────────────────────────────────────────────────
         self._create_format_actions()
         self._build_explorer()
         self._build_format_panel()
@@ -1051,24 +1028,17 @@ class PlainNotepad(QMainWindow):
         self._build_toolbar()
         self._build_status_bar()
 
-        # Apply initial theme
         self._apply_theme()
         self.new_file()
 
-        # ── Restore layout from settings if enabled ────────────────────────
         self._restore_layout()
 
-        # Connect to OS color-scheme changes (Qt 6.5+, safe fallback)
         try:
             QApplication.instance().styleHints().colorSchemeChanged.connect(
                 self._on_system_scheme_changed)
         except AttributeError:
             pass
 
-        # Timer-based poll for auto mode (catches systems where the signal
-        # doesn't fire, e.g. some Linux DEs). Fires every 2 seconds and is
-        # cheap — it only re-applies the theme when the scheme actually
-        # changes.
         self._auto_poll_timer = QTimer(self)
         self._auto_poll_timer.setInterval(2000)
         self._auto_poll_timer.timeout.connect(self._poll_system_theme)
@@ -1080,7 +1050,6 @@ class PlainNotepad(QMainWindow):
     # ══════════════════════════════════════════════════════════════════════════
 
     def _load_settings(self) -> dict:
-        """Load user preferences from QSettings (INI-backed)."""
         prefs = dict(DEFAULT_SETTINGS)
         raw = self._qsettings.value("user_prefs")
         if raw:
@@ -1092,12 +1061,10 @@ class PlainNotepad(QMainWindow):
         return prefs
 
     def _save_settings(self):
-        """Persist current preferences to QSettings."""
         self._qsettings.setValue("user_prefs", json.dumps(self._prefs))
         self._qsettings.sync()
 
     def _save_layout(self):
-        """Save window geometry and dock widget state."""
         self._qsettings.setValue("window_geometry", self.saveGeometry())
         self._qsettings.setValue("window_state", self.saveState())
         self._qsettings.setValue("explorer_visible", self.file_dock.isVisible())
@@ -1105,7 +1072,6 @@ class PlainNotepad(QMainWindow):
         self._qsettings.sync()
 
     def _restore_layout(self):
-        """Restore window geometry and dock state from QSettings (if enabled)."""
         if not self._prefs.get("restore_layout", True):
             return
 
@@ -1117,7 +1083,6 @@ class PlainNotepad(QMainWindow):
         if state and isinstance(state, QByteArray):
             self.restoreState(state)
 
-        # Restore dock visibility per preference
         if self._prefs.get("restore_explorer_state", True):
             vis = self._qsettings.value("explorer_visible", False)
             self.file_dock.setVisible(
@@ -1137,7 +1102,6 @@ class PlainNotepad(QMainWindow):
     # ══════════════════════════════════════════════════════════════════════════
 
     def open_settings(self):
-        """Show the Settings dialog and apply changes on accept."""
         dlg = SettingsDialog(self, current_settings=self._prefs)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             new_prefs = dlg.get_settings()
@@ -1146,11 +1110,9 @@ class PlainNotepad(QMainWindow):
             self._theme_mode = new_prefs["theme_mode"]
             self._save_settings()
 
-            # Re-apply theme if it changed
             if self._theme_mode != old_theme:
                 self._apply_theme()
 
-            # Start/stop auto-poll timer based on mode
             if self._theme_mode == "auto":
                 self._auto_poll_timer.start()
             else:
@@ -1162,29 +1124,25 @@ class PlainNotepad(QMainWindow):
 
     @staticmethod
     def _detect_system_dark() -> bool:
-        """Return True if the OS prefers dark mode (Qt 6.5+ API)."""
         try:
             cs = QApplication.instance().styleHints().colorScheme()
             return cs == Qt.ColorScheme.Dark
         except AttributeError:
-            return True     # safe default
+            return True
 
     def _apply_theme(self):
-        """Apply the QSS for the current theme mode and update all widgets."""
         mode = self._theme_mode
         dark = self._detect_system_dark() if mode == "auto" else (mode == "dark")
 
         QApplication.instance().setStyleSheet(
             DARK_THEME_QSS if dark else LIGHT_THEME_QSS)
 
-        # Gutter colours in all open editors
         for i in range(self.tab_widget.count()):
             ed = self.tab_widget.widget(i)
             if isinstance(ed, CodeEditor):
                 ed._gutter_dark = dark
                 ed._lna.update()
 
-        # Update toolbar button label
         if hasattr(self, "_theme_act"):
             self._theme_act.setText(self._THEME_LABELS[mode])
             self._theme_act.setToolTip(self._THEME_TIPS[mode])
@@ -1194,7 +1152,6 @@ class PlainNotepad(QMainWindow):
         self._prefs["theme_mode"] = self._theme_mode
         self._save_settings()
         self._apply_theme()
-        # Manage auto-poll timer
         if self._theme_mode == "auto":
             self._auto_poll_timer.start()
         else:
@@ -1206,7 +1163,6 @@ class PlainNotepad(QMainWindow):
             self._apply_theme()
 
     def _poll_system_theme(self):
-        """Timer callback: re-apply theme if the OS scheme changed since last check."""
         if self._theme_mode != "auto":
             return
         current = self._detect_system_dark()
@@ -1215,7 +1171,7 @@ class PlainNotepad(QMainWindow):
             self._apply_theme()
 
     # ══════════════════════════════════════════════════════════════════════════
-    # Format actions (shared between menu / toolbar / sidebar)
+    # Format actions
     # ══════════════════════════════════════════════════════════════════════════
 
     def _create_format_actions(self):
@@ -1244,7 +1200,6 @@ class PlainNotepad(QMainWindow):
     def _build_menu(self):
         mb = self.menuBar()
 
-        # ── File ──────────────────────────────────────────────────────────
         file_menu = mb.addMenu("File")
         self._make_action(file_menu, "New",
                           QKeySequence.StandardKey.New, self.new_file)
@@ -1261,7 +1216,6 @@ class PlainNotepad(QMainWindow):
         self._make_action(file_menu, "Exit",
                           QKeySequence.StandardKey.Quit, self.close)
 
-        # ── Edit ──────────────────────────────────────────────────────────
         edit_menu = mb.addMenu("Edit")
         self._make_action(edit_menu, "Undo",
                           QKeySequence.StandardKey.Undo,  self._editor_undo)
@@ -1278,7 +1232,6 @@ class PlainNotepad(QMainWindow):
         self._make_action(edit_menu, "Settings\u2026",
                           QKeySequence("Ctrl+,"), self.open_settings)
 
-        # ── View ──────────────────────────────────────────────────────────
         view_menu = mb.addMenu("View")
         exp_toggle = self.file_dock.toggleViewAction()
         exp_toggle.setText("Explorer")
@@ -1294,7 +1247,6 @@ class PlainNotepad(QMainWindow):
         self._make_action(view_menu, "Save Layout Now",
                           callback=self._manual_save_layout)
 
-        # ── Help ──────────────────────────────────────────────────────────
         help_menu = mb.addMenu("Help")
         self._make_action(help_menu, "About M-Pad",
                           callback=self.show_about_dialog)
@@ -1307,21 +1259,18 @@ class PlainNotepad(QMainWindow):
         tb.setIconSize(QSize(16, 16))
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, tb)
 
-        # ── Spacer ────────────────────────────────────────────────────────
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding,
                              QSizePolicy.Policy.Preferred)
         tb.addWidget(spacer)
         tb.addSeparator()
 
-        # ── Theme cycle ───────────────────────────────────────────────────
         self._theme_act = self._make_tb_action(
             self._THEME_LABELS["dark"], self._cycle_theme,
             self._THEME_TIPS["dark"])
         tb.addAction(self._theme_act)
         tb.addSeparator()
 
-        # ── Dock toggles ──────────────────────────────────────────────────
         self._explorer_tb_action = self._make_tb_action(
             "\u2318  Explorer", self._toggle_explorer,
             "Toggle file explorer  (Ctrl+Shift+E)", checkable=True)
@@ -1345,7 +1294,6 @@ class PlainNotepad(QMainWindow):
             sb.addPermanentWidget(lbl)
 
     def _build_explorer(self, root_path=None):
-        """Left file-explorer dock. Hidden by default."""
         root_path = root_path or os.path.expanduser("~")
 
         self.file_model = QFileSystemModel()
@@ -1382,7 +1330,6 @@ class PlainNotepad(QMainWindow):
         self.file_dock.hide()
 
     def _build_format_panel(self):
-        """Right format/properties sidebar dock. Hidden by default."""
         panel = QWidget()
         panel.setObjectName("formatPanel")
 
@@ -1401,7 +1348,6 @@ class PlainNotepad(QMainWindow):
             line.setFrameShape(QFrame.Shape.HLine)
             return line
 
-        # ── Font ──────────────────────────────────────────────────────────
         layout.addWidget(section_lbl("Font"))
         layout.addSpacing(4)
 
@@ -1435,7 +1381,6 @@ class PlainNotepad(QMainWindow):
         layout.addWidget(divider())
         layout.addSpacing(6)
 
-        # ── Style ─────────────────────────────────────────────────────────
         layout.addWidget(section_lbl("Style"))
         layout.addSpacing(6)
 
@@ -1459,7 +1404,6 @@ class PlainNotepad(QMainWindow):
         layout.addWidget(divider())
         layout.addSpacing(6)
 
-        # ── Alignment ─────────────────────────────────────────────────────
         layout.addWidget(section_lbl("Alignment"))
         layout.addSpacing(6)
 
@@ -1482,7 +1426,7 @@ class PlainNotepad(QMainWindow):
                     x = sz - 3 - w
                 elif align_mode == "center":
                     x = (sz - w) // 2
-                else:  # justify
+                else:
                     x = 3
                 p.setPen(Qt.PenStyle.NoPen)
                 p.setBrush(QColor(255, 255, 255, 200))
@@ -1525,7 +1469,7 @@ class PlainNotepad(QMainWindow):
         self.format_dock.hide()
 
     # ══════════════════════════════════════════════════════════════════════════
-    # Action / widget factories  (always parented to self)
+    # Action / widget factories
     # ══════════════════════════════════════════════════════════════════════════
 
     def _make_action(self, menu, label, shortcut=None, callback=None):
@@ -1546,7 +1490,7 @@ class PlainNotepad(QMainWindow):
         return act
 
     # ══════════════════════════════════════════════════════════════════════════
-    # Safe editor proxies (guard against no open tab)
+    # Safe editor proxies
     # ══════════════════════════════════════════════════════════════════════════
 
     def _editor_undo(self):  ed = self.current_editor(); ed and ed.undo()
@@ -1566,7 +1510,6 @@ class PlainNotepad(QMainWindow):
         editor = CodeEditor()
         editor.setFont(QFont("Consolas", 13))
         editor.file_path = path
-        # Inherit current theme's gutter colours immediately
         editor._gutter_dark = (self._theme_mode != "light") if self._theme_mode != "auto" \
             else self._detect_system_dark()
         editor.document().setModified(False)
@@ -1880,7 +1823,6 @@ class PlainNotepad(QMainWindow):
             self._sidebar_tb_action.setChecked(visible)
 
     def _manual_save_layout(self):
-        """Explicitly save the current layout (View → Save Layout Now)."""
         self._save_layout()
         self.statusBar().showMessage("Layout saved.", 3000)
 
@@ -1916,7 +1858,6 @@ class PlainNotepad(QMainWindow):
                 event.ignore()
                 return
 
-        # Persist layout and settings on exit
         if self._prefs.get("restore_layout", True):
             self._save_layout()
         self._save_settings()
@@ -1941,11 +1882,12 @@ class PlainNotepad(QMainWindow):
         )
 
 
-# ─── Entry point ──────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# Entry point
+# ─────────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
-    # Stylesheet is applied by PlainNotepad._apply_theme() in __init__
 
     notepad = PlainNotepad()
     notepad.show()

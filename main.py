@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import shutil
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QTextEdit, QTabWidget,
     QFileDialog, QMessageBox, QFontDialog, QTreeView,
@@ -12,9 +13,11 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtGui import (
     QAction, QKeySequence, QFont, QTextCharFormat, QFileSystemModel,
-    QPainter, QColor,
+    QPainter, QColor, QPixmap, QIcon,
 )
 from PyQt6.QtCore import Qt, QSize, QRect, QSettings, QTimer, QByteArray
+from PyQt6.QtGui import QPaintEvent, QResizeEvent
+from PyQt6.QtGui import QCloseEvent
 
 COL_NAME, COL_SIZE, COL_TYPE, COL_DATE = 0, 1, 2, 3
 COLUMN_LABELS = {
@@ -787,8 +790,9 @@ class SettingsDialog(QDialog):
         )
         btn_box.accepted.connect(self.accept)
         btn_box.rejected.connect(self.reject)
-        btn_box.button(QDialogButtonBox.StandardButton.RestoreDefaults).clicked.connect(
-            self._restore_defaults)
+        _restore_btn = btn_box.button(QDialogButtonBox.StandardButton.RestoreDefaults)
+        if _restore_btn is not None:
+            _restore_btn.clicked.connect(self._restore_defaults)
         layout.addWidget(btn_box)
 
     def _build_appearance_tab(self):
@@ -849,8 +853,6 @@ class SettingsDialog(QDialog):
 
         self._tab_widget.addTab(page, "Layout")
 
-    def _add_new_tab(self, name, widget):
-        self._tab_widget.addTab(widget, name)
 
     def get_settings(self) -> dict:
         mode_map = {0: "dark", 1: "light", 2: "auto"}
@@ -882,8 +884,8 @@ class LineNumberArea(QWidget):
     def sizeHint(self) -> QSize:
         return QSize(self._editor.gutter_width(), 0)
 
-    def paintEvent(self, event):
-        self._editor.paint_line_numbers(event)
+    def paintEvent(self, a0: QPaintEvent | None) -> None:  # type: ignore[override]
+        self._editor.paint_line_numbers(a0)
 
 
 class CodeEditor(QTextEdit):
@@ -896,29 +898,37 @@ class CodeEditor(QTextEdit):
         super().__init__(parent)
         self._lna         = LineNumberArea(self)
         self._gutter_dark = True
-        self.document().setDocumentMargin(self._DOC_MARGIN)
+        self.file_path: str | None = None
 
-        self.document().blockCountChanged.connect(self._refresh_gutter_width)
-        self.verticalScrollBar().valueChanged.connect(self._lna.update)
-        self.document().contentsChanged.connect(self._lna.update)
+        doc = self.document()
+        if doc is not None:
+            doc.setDocumentMargin(self._DOC_MARGIN)
+            doc.blockCountChanged.connect(self._refresh_gutter_width)
+            doc.contentsChanged.connect(self._lna.update)
+
+        vsb = self.verticalScrollBar()
+        if vsb is not None:
+            vsb.valueChanged.connect(self._lna.update)
+
         self.cursorPositionChanged.connect(self._lna.update)
-
         self._refresh_gutter_width()
 
     def gutter_width(self) -> int:
-        digits = max(3, len(str(max(1, self.document().blockCount()))))
+        doc = self.document()
+        block_count = doc.blockCount() if doc is not None else 1
+        digits = max(3, len(str(max(1, block_count))))
         return self._GUTTER_LEFT_PAD + digits * self.fontMetrics().horizontalAdvance("0") + self._GUTTER_RIGHT_PAD
 
     def _refresh_gutter_width(self):
         self.setViewportMargins(self.gutter_width(), 0, 0, 0)
         self._lna.update()
 
-    def setFont(self, font: QFont):
-        super().setFont(font)
+    def setFont(self, a0: QFont) -> None:  # type: ignore[override]
+        super().setFont(a0)
         self._refresh_gutter_width()
 
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
+    def resizeEvent(self, a0: QResizeEvent | None) -> None:  # type: ignore[override]
+        super().resizeEvent(a0)  # type: ignore[arg-type]
         cr = self.contentsRect()
         self._lna.setGeometry(QRect(cr.left(), cr.top(), self.gutter_width(), cr.height()))
 
@@ -949,13 +959,22 @@ class CodeEditor(QTextEdit):
         ln_font.setPointSize(max(9, self.font().pointSize() - 1))
         painter.setFont(ln_font)
 
-        doc_layout  = self.document().documentLayout()
-        scroll_y    = self.verticalScrollBar().value()
+        doc = self.document()
+        vsb = self.verticalScrollBar()
+        if doc is None or vsb is None:
+            painter.end()
+            return
+
+        doc_layout  = doc.documentLayout()
+        if doc_layout is None:
+            painter.end()
+            return
+        scroll_y    = vsb.value()
         lna_height  = self._lna.height()
         current_blk = self.textCursor().block()
         text_rect_w = self._lna.width() - self._GUTTER_RIGHT_PAD
 
-        block = self.document().begin()
+        block = doc.begin()
         num   = 0
 
         while block.isValid():
@@ -1034,8 +1053,12 @@ class PlainNotepad(QMainWindow):
         self._restore_layout()
 
         try:
-            QApplication.instance().styleHints().colorSchemeChanged.connect(
-                self._on_system_scheme_changed)
+            _app = QApplication.instance()
+            if isinstance(_app, QApplication):
+                _hints = _app.styleHints()
+                if _hints is not None:
+                    _hints.colorSchemeChanged.connect(
+                        self._on_system_scheme_changed)
         except AttributeError:
             pass
 
@@ -1086,14 +1109,14 @@ class PlainNotepad(QMainWindow):
         if self._prefs.get("restore_explorer_state", True):
             vis = self._qsettings.value("explorer_visible", False)
             self.file_dock.setVisible(
-                vis == "true" or vis is True if isinstance(vis, (str, bool)) else False)
+                (vis == "true" or vis is True) if isinstance(vis, (str, bool)) else False)
         else:
             self.file_dock.hide()
 
         if self._prefs.get("restore_sidebar_state", True):
             vis = self._qsettings.value("sidebar_visible", False)
             self.format_dock.setVisible(
-                vis == "true" or vis is True if isinstance(vis, (str, bool)) else False)
+                (vis == "true" or vis is True) if isinstance(vis, (str, bool)) else False)
         else:
             self.format_dock.hide()
 
@@ -1125,7 +1148,13 @@ class PlainNotepad(QMainWindow):
     @staticmethod
     def _detect_system_dark() -> bool:
         try:
-            cs = QApplication.instance().styleHints().colorScheme()
+            _app = QApplication.instance()
+            if not isinstance(_app, QApplication):
+                return True
+            _hints = _app.styleHints()
+            if _hints is None:
+                return True
+            cs = _hints.colorScheme()
             return cs == Qt.ColorScheme.Dark
         except AttributeError:
             return True
@@ -1134,8 +1163,9 @@ class PlainNotepad(QMainWindow):
         mode = self._theme_mode
         dark = self._detect_system_dark() if mode == "auto" else (mode == "dark")
 
-        QApplication.instance().setStyleSheet(
-            DARK_THEME_QSS if dark else LIGHT_THEME_QSS)
+        _app = QApplication.instance()
+        if isinstance(_app, QApplication):
+            _app.setStyleSheet(DARK_THEME_QSS if dark else LIGHT_THEME_QSS)
 
         for i in range(self.tab_widget.count()):
             ed = self.tab_widget.widget(i)
@@ -1199,8 +1229,10 @@ class PlainNotepad(QMainWindow):
 
     def _build_menu(self):
         mb = self.menuBar()
+        assert mb is not None
 
         file_menu = mb.addMenu("File")
+        assert file_menu is not None
         self._make_action(file_menu, "New",
                           QKeySequence.StandardKey.New, self.new_file)
         self._make_action(file_menu, "Open File\u2026",
@@ -1217,6 +1249,7 @@ class PlainNotepad(QMainWindow):
                           QKeySequence.StandardKey.Quit, self.close)
 
         edit_menu = mb.addMenu("Edit")
+        assert edit_menu is not None
         self._make_action(edit_menu, "Undo",
                           QKeySequence.StandardKey.Undo,  self._editor_undo)
         self._make_action(edit_menu, "Redo",
@@ -1233,21 +1266,25 @@ class PlainNotepad(QMainWindow):
                           QKeySequence("Ctrl+,"), self.open_settings)
 
         view_menu = mb.addMenu("View")
+        assert view_menu is not None
         exp_toggle = self.file_dock.toggleViewAction()
-        exp_toggle.setText("Explorer")
-        exp_toggle.setShortcut(QKeySequence("Ctrl+Shift+E"))
-        view_menu.addAction(exp_toggle)
+        if exp_toggle is not None:
+            exp_toggle.setText("Explorer")
+            exp_toggle.setShortcut(QKeySequence("Ctrl+Shift+E"))
+            view_menu.addAction(exp_toggle)
 
         sb_toggle = self.format_dock.toggleViewAction()
-        sb_toggle.setText("Format Sidebar")
-        sb_toggle.setShortcut(QKeySequence("Ctrl+Shift+F"))
-        view_menu.addAction(sb_toggle)
+        if sb_toggle is not None:
+            sb_toggle.setText("Format Sidebar")
+            sb_toggle.setShortcut(QKeySequence("Ctrl+Shift+F"))
+            view_menu.addAction(sb_toggle)
 
         view_menu.addSeparator()
         self._make_action(view_menu, "Save Layout Now",
                           callback=self._manual_save_layout)
 
         help_menu = mb.addMenu("Help")
+        assert help_menu is not None
         self._make_action(help_menu, "About M-Pad",
                           callback=self.show_about_dialog)
 
@@ -1311,6 +1348,7 @@ class PlainNotepad(QMainWindow):
         self.tree_view.setColumnHidden(COL_DATE, True)
         self.tree_view.setColumnWidth(COL_NAME, 240)
         header = self.tree_view.header()
+        assert header is not None
         header.setStretchLastSection(False)
         header.setSectionResizeMode(COL_NAME, header.ResizeMode.Stretch)
 
@@ -1381,11 +1419,11 @@ class PlainNotepad(QMainWindow):
         layout.addWidget(divider())
         layout.addSpacing(6)
 
-        layout.addWidget(section_lbl("Style"))
+        layout.addWidget(section_lbl("Font Style"))
         layout.addSpacing(6)
 
         style_row = QHBoxLayout()
-        style_row.setSpacing(6)
+        style_row.setSpacing(15)
         for action, extra in [
             (self.bold_action,      "font-weight:900; font-size:15px;"),
             (self.italic_action,    "font-style:italic; font-size:15px;"),
@@ -1404,14 +1442,13 @@ class PlainNotepad(QMainWindow):
         layout.addWidget(divider())
         layout.addSpacing(6)
 
-        layout.addWidget(section_lbl("Alignment"))
+        layout.addWidget(section_lbl("Text Alignment"))
         layout.addSpacing(6)
 
         def _make_align_icon(widths, align_mode):
-            from PyQt6.QtGui import QPixmap, QIcon
-            sz = 24
+            sz = 32
             pm = QPixmap(sz, sz)
-            pm.fill(QColor(0, 0, 0, 0))
+            pm.fill(QColor(80, 80, 80, 80))
             p = QPainter(pm)
             p.setRenderHint(QPainter.RenderHint.Antialiasing)
             bar_h = 2
@@ -1435,7 +1472,7 @@ class PlainNotepad(QMainWindow):
             return QIcon(pm)
 
         align_row = QHBoxLayout()
-        align_row.setSpacing(6)
+        align_row.setSpacing(15)
         self._align_btns = []
         for icon, alignment, tip in [
             (_make_align_icon([18, 12, 16], "left"),   Qt.AlignmentFlag.AlignLeft,    "Align left"),
@@ -1493,18 +1530,29 @@ class PlainNotepad(QMainWindow):
     # Safe editor proxies
     # ══════════════════════════════════════════════════════════════════════════
 
-    def _editor_undo(self):  ed = self.current_editor(); ed and ed.undo()
-    def _editor_redo(self):  ed = self.current_editor(); ed and ed.redo()
-    def _editor_cut(self):   ed = self.current_editor(); ed and ed.cut()
-    def _editor_copy(self):  ed = self.current_editor(); ed and ed.copy()
-    def _editor_paste(self): ed = self.current_editor(); ed and ed.paste()
+    def _editor_undo(self):
+        ed = self.current_editor()
+        if ed: ed.undo()
+    def _editor_redo(self):
+        ed = self.current_editor()
+        if ed: ed.redo()
+    def _editor_cut(self):
+        ed = self.current_editor()
+        if ed: ed.cut()
+    def _editor_copy(self):
+        ed = self.current_editor()
+        if ed: ed.copy()
+    def _editor_paste(self):
+        ed = self.current_editor()
+        if ed: ed.paste()
 
     # ══════════════════════════════════════════════════════════════════════════
     # Tab helpers
     # ══════════════════════════════════════════════════════════════════════════
 
-    def current_editor(self):
-        return self.tab_widget.currentWidget()
+    def current_editor(self) -> "CodeEditor | None":
+        widget = self.tab_widget.currentWidget()
+        return widget if isinstance(widget, CodeEditor) else None
 
     def create_tab(self, title="Untitled", path=None, content="", html=False):
         editor = CodeEditor()
@@ -1512,14 +1560,18 @@ class PlainNotepad(QMainWindow):
         editor.file_path = path
         editor._gutter_dark = (self._theme_mode != "light") if self._theme_mode != "auto" \
             else self._detect_system_dark()
-        editor.document().setModified(False)
+        doc = editor.document()
+        if doc is not None:
+            doc.setModified(False)
         if html:
             editor.setHtml(content)
         else:
             editor.setPlainText(content)
 
-        editor.document().modificationChanged.connect(
-            lambda _, ed=editor: self.update_tab_title(ed))
+        _doc = editor.document()
+        if _doc is not None:
+            _doc.modificationChanged.connect(
+                lambda _, ed=editor: self.update_tab_title(ed))
         editor.cursorPositionChanged.connect(self._update_status_bar)
         editor.cursorPositionChanged.connect(self.update_format_actions)
         editor.textChanged.connect(self._update_status_bar)
@@ -1534,12 +1586,13 @@ class PlainNotepad(QMainWindow):
         self._update_status_bar()
         self.update_format_actions()
 
-    def update_tab_title(self, editor):
+    def update_tab_title(self, editor: "CodeEditor"):
         index = self.tab_widget.indexOf(editor)
         if index < 0:
             return
         name = os.path.basename(editor.file_path) if editor.file_path else "Untitled"
-        if editor.document().isModified():
+        _doc = editor.document()
+        if _doc is not None and _doc.isModified():
             name += "  \u25cf"
         self.tab_widget.setTabText(index, name)
         self.update_window_title()
@@ -1550,7 +1603,8 @@ class PlainNotepad(QMainWindow):
             self.setWindowTitle("M-Pad")
             return
         name = editor.file_path if editor.file_path else "Untitled"
-        dot  = "\u25cf " if editor.document().isModified() else ""
+        _doc = editor.document()
+        dot  = "\u25cf " if (_doc is not None and _doc.isModified()) else ""
         self.setWindowTitle(f"{dot}M-Pad  \u2014  {name}")
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -1602,13 +1656,15 @@ class PlainNotepad(QMainWindow):
             base_path = os.path.dirname(base_path)
 
         menu = QMenu(self)
-        new_file_act   = menu.addAction("New File")
-        new_folder_act = menu.addAction("New Folder")
+        new_file_act   = QAction("New File",   self); menu.addAction(new_file_act)
+        new_folder_act = QAction("New Folder", self); menu.addAction(new_folder_act)
         menu.addSeparator()
-        rename_act = menu.addAction("Rename")
-        delete_act = menu.addAction("Delete")
+        rename_act = QAction("Rename", self); menu.addAction(rename_act)
+        delete_act = QAction("Delete", self); menu.addAction(delete_act)
 
-        action = menu.exec(self.tree_view.viewport().mapToGlobal(pos))
+        vp = self.tree_view.viewport()
+        exec_pos = vp.mapToGlobal(pos) if vp is not None else pos
+        action = menu.exec(exec_pos)
         if   action == new_file_act:   self.create_new_file_in_dir(base_path)
         elif action == new_folder_act: self.create_new_folder_in_dir(base_path)
         elif action == rename_act and index.isValid(): self.rename_item(index)
@@ -1616,22 +1672,26 @@ class PlainNotepad(QMainWindow):
 
     def on_header_context_menu(self, pos):
         header = self.tree_view.header()
+        if header is None:
+            return
         menu   = QMenu(self)
         for col, label in COLUMN_LABELS.items():
-            act = menu.addAction(label)
+            act = QAction(label, self)
             act.setCheckable(True)
             act.setChecked(not self.tree_view.isColumnHidden(col))
             act.setEnabled(col != COL_NAME)
             act.setData(col)
+            menu.addAction(act)
         chosen = menu.exec(header.mapToGlobal(pos))
-        if chosen and chosen.data() is not None:
+        if chosen is not None and chosen.data() is not None:
             self.tree_view.setColumnHidden(chosen.data(), not chosen.isChecked())
 
     def create_new_file_in_dir(self, dir_path):
         name, ok = QInputDialog.getText(self, "New File", "File name:")
         if ok and name:
             try:
-                open(os.path.join(dir_path, name), "w", encoding="utf-8").close()
+                with open(os.path.join(dir_path, name), "w", encoding="utf-8"):
+                    pass
                 self.file_model.setRootPath(self.file_model.rootPath())
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Could not create file:\n{e}")
@@ -1665,7 +1725,7 @@ class PlainNotepad(QMainWindow):
             QMessageBox.StandardButton.No)
         if res == QMessageBox.StandardButton.Yes:
             try:
-                os.rmdir(path) if os.path.isdir(path) else os.remove(path)
+                shutil.rmtree(path) if os.path.isdir(path) else os.remove(path)
                 self.file_model.setRootPath(self.file_model.rootPath())
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Could not delete:\n{e}")
@@ -1694,7 +1754,7 @@ class PlainNotepad(QMainWindow):
         editor = self.current_editor()
         if not editor:
             return
-        if not getattr(editor, "file_path", None):
+        if not editor.file_path:
             self.save_file_as()
             return
         self._write_file(editor, editor.file_path)
@@ -1709,14 +1769,16 @@ class PlainNotepad(QMainWindow):
             editor.file_path = path
             self._write_file(editor, path)
 
-    def _write_file(self, editor, path):
+    def _write_file(self, editor: "CodeEditor", path: str):
         try:
             with open(path, "w", encoding="utf-8") as f:
                 if path.lower().endswith((".html", ".htm")):
                     f.write(editor.toHtml())
                 else:
                     f.write(editor.toPlainText())
-            editor.document().setModified(False)
+            _doc = editor.document()
+            if _doc is not None:
+                _doc.setModified(False)
             self.update_tab_title(editor)
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Could not save file:\n{e}")
@@ -1824,30 +1886,40 @@ class PlainNotepad(QMainWindow):
 
     def _manual_save_layout(self):
         self._save_layout()
-        self.statusBar().showMessage("Layout saved.", 3000)
+        _sb = self.statusBar()
+        if _sb is not None:
+            _sb.showMessage("Layout saved.", 3000)
 
     # ══════════════════════════════════════════════════════════════════════════
     # Lifecycle
     # ══════════════════════════════════════════════════════════════════════════
 
-    def close_tab(self, index):
-        editor = self.tab_widget.widget(index)
-        if editor.document().isModified():
-            res = QMessageBox.question(
-                self, "Unsaved Changes",
-                "This tab has unsaved changes. Close it anyway?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No)
-            if res == QMessageBox.StandardButton.No:
-                return
+    def close_tab(self, index: int):
+        widget = self.tab_widget.widget(index)
+        if widget is None:
+            return
+        if isinstance(widget, CodeEditor):
+            _doc = widget.document()
+            if _doc is not None and _doc.isModified():
+                res = QMessageBox.question(
+                    self, "Unsaved Changes",
+                    "This tab has unsaved changes. Close it anyway?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No)
+                if res == QMessageBox.StandardButton.No:
+                    return
         self.tab_widget.removeTab(index)
         if self.tab_widget.count() == 0:
             self.new_file()
 
-    def closeEvent(self, event):
-        modified = [self.tab_widget.widget(i)
-                    for i in range(self.tab_widget.count())
-                    if self.tab_widget.widget(i).document().isModified()]
+    def closeEvent(self, a0: QCloseEvent | None) -> None:  # type: ignore[override]
+        modified: list[QWidget] = []
+        for i in range(self.tab_widget.count()):
+            w = self.tab_widget.widget(i)
+            if w is not None:
+                _doc = w.document() if isinstance(w, CodeEditor) else None  # type: ignore[attr-defined]
+                if _doc is not None and _doc.isModified():
+                    modified.append(w)
         if modified:
             res = QMessageBox.question(
                 self, "Unsaved Changes",
@@ -1855,14 +1927,16 @@ class PlainNotepad(QMainWindow):
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No)
             if res == QMessageBox.StandardButton.No:
-                event.ignore()
+                if a0 is not None:
+                    a0.ignore()
                 return
 
         if self._prefs.get("restore_layout", True):
             self._save_layout()
         self._save_settings()
 
-        event.accept()
+        if a0 is not None:
+            a0.accept()
 
     # ══════════════════════════════════════════════════════════════════════════
     # About

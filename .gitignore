@@ -15,6 +15,11 @@ MANIFEST
 .eggs/
 wheels/
 
+# PyInstaller Windows build output (upload M-Pad.exe manually)
+*.exe
+*.spec.bak
+_MEI*/
+
 # Virtual environments
 .venv/
 venv/

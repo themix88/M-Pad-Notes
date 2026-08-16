@@ -6,7 +6,7 @@ __pycache__/
 *.pyo
 *.pyd
 
-# Distribution / packaging
+# Distribution / packaging build outputs
 dist/
 build/
 *.egg-info/
@@ -14,9 +14,9 @@ build/
 MANIFEST
 .eggs/
 wheels/
+*.whl
 
-# PyInstaller Windows build output (upload M-Pad.exe manually)
-*.exe
+# PyInstaller build artifacts
 *.spec.bak
 _MEI*/
 
@@ -70,9 +70,22 @@ desktop.ini
 *.sqlite
 *.sqlite3
 
-# AUR / distro packaging artifacts
+# Linux packaging artifacts (RPM, AUR, DEB, Flatpak, AppImage)
 *.tar.gz
 *.tar.xz
 *.tar.zst
+*.rpm
+*.srpm
+*.src.rpm
+*.deb
+*.AppImage
+*.flatpak
+.flatpak-builder/
+_build/
+squashfs-root/
 src/
 pkg/
+rpmbuild/
+build-rpm.sh
+m-pad.spec
+

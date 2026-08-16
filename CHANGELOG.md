@@ -2,9 +2,23 @@
 
 All notable changes to the M-Pad project will be documented in this file.
 
-## [1.0] - 2026-07-13
+## [1.2] - 2026-08-16
 
-Initial release of M-Pad v1.0, a lightweight text companion built using Python and PyQt6.
+### Added
+- **Word Wrap toggle** — new `View → Word Wrap` menu item (`Ctrl+Shift+W`) and `↩ Wrap` toolbar button; setting applies to all open tabs and is respected by new tabs.
+- **Zoom In / Zoom Out / Reset Zoom** — `View` menu entries with standard shortcuts (`Ctrl++`, `Ctrl+-`, `Ctrl+0`); `−` and `+` toolbar buttons also added. Zoom syncs with the Format Sidebar font-size spinner.
+- **Character count** in the status bar alongside the existing word count (`Chars: N`).
+- **File path label** on the left side of the status bar showing the path of the current file.
+- Status bar label separators — subtle vertical dividers between status items, styled via QSS.
+
+### Changed
+- **Explorer dock moved back to the Left side** (reverts the v1.1 change to Bottom placement — left side is the standard convention for file explorers).
+- **Word count is now debounced** (400 ms delay after last keystroke) to avoid expensive recalculation on every keypress in large documents.
+- Text editor now has `padding: 4px 8px` in both themes for more comfortable reading.
+- Status bar `min-height` set to `24 px`; label text opacity slightly increased for better readability.
+- Removed redundant per-label `setStyleSheet()` calls from the status bar builder — styling is now fully managed by the application QSS.
+- Consolidated three separate `from PyQt6.QtGui import` statements into one clean block.
+- `About` dialog version string updated to v1.2.
 
 ## [1.1] - 2026-08-14
 
@@ -20,7 +34,7 @@ Initial release of M-Pad v1.0, a lightweight text companion built using Python a
 - Layout saving for Explorer and Format Sidebar docks (position and size is now remembered between sessions). Can be toggled as well.
 
 ### Changed
-- Explorer dock now opens from the **bottom** of the window by default (was left side).
+- Explorer dock opens from the **bottom** of the window by default (later reverted to left side in v1.2).
 - Renamed top-level **About** menu to **Help** (standard convention).
 - Reordered internal widget construction so dock widgets are built before menus, enabling the View menu to use Qt's native `toggleViewAction()` for reliable state synchronisation.
 - Removed font formatting buttons from the toolbar (these are now accessible via the Format Sidebar or shortcuts).
@@ -35,3 +49,7 @@ Initial release of M-Pad v1.0, a lightweight text companion built using Python a
 
 ### Known Issues / Bugs
 - Sidebar dock, when dragged to the top or bottom of the window, will not resize properly when the window is resized. Will probably restrict it to left/right docking in future releases.
+
+## [1.0] - 2026-07-13
+
+Initial release of M-Pad v1.0, a lightweight text companion built using Python and PyQt6.

@@ -1,6 +1,6 @@
 # M-Pad
 
-![Version](https://img.shields.io/badge/version-1.1-blue.svg)
+![Version](https://img.shields.io/badge/version-1.2-blue.svg)
 ![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)
 [![Python Version](https://img.shields.io/badge/python-3.6%2B-blue.svg)](https://www.python.org/)
 [![PyQt Version](https://img.shields.io/badge/PyQt-6-orange.svg)](https://www.riverbankcomputing.com/software/pyqt/)
@@ -11,12 +11,15 @@ M-Pad is a lightweight, blazing-fast, and customizable tabbed text companion bui
 
 ## 🚀 Features
 
-* **🎨 UI:** Initial styling with seamless light, dark, and auto theme switching. <-- Theme will be improved in future releases. Basics work.
-* **📂 Tabbed Interface:** Work on multiple files simultaneously with intelligent save prompts. <-- Just fancy wording. It basicly gives you a warning to save before closing the tab of file.
-* **🌳 Integrated File Explorer:** Bottom-docked interactive directory tree for rapid system navigation, supporting drag-and-drop layout configuration. States of which, can be saved or not, your choice.
-* **📝 Rich Formatting Sidebar:** Right-docked panel for styling (Font family, size, alignment, bold, italic, and underline settings). Also supports drag-and-drop layout configuration.
+* **🎨 UI:** Seamless light, dark, and auto theme switching. Theme adapts to system preference when set to Auto.
+* **📂 Tabbed Interface:** Work on multiple files simultaneously with intelligent save prompts. (It's just fancy wording, it asks you to save before closing the files)
+* **🌳 Integrated File Explorer:** Left-docked interactive directory tree for rapid system navigation, supporting drag-and-drop layout configuration. Dock visibility and position can be saved between sessions.
+* **📝 Rich Formatting Sidebar:** Right-docked panel for styling (font family, size, alignment, bold, italic, and underline). Also supports drag-and-drop layout configuration.
 * **🔢 Line Numbers:** Sticky, editor-style line numbering that automatically adapts to the selected theme.
-* **⌨️ Keyboard Shortcuts:** Intuitive shortcuts for common actions (actually standard practice...), including file operations, formatting, and dock toggling. All shortcuts are displayed in tooltips for easy reference. Might add changing of shortcuts in future releases, but for now, you can just use the defaults.
+* **↩ Word Wrap:** Toggle word-wrap on all open editors via `View → Word Wrap` (`Ctrl+Shift+W`) or the toolbar button.
+* **🔍 Zoom:** Increase/decrease editor font size with `Ctrl++` / `Ctrl+-` / `Ctrl+0` (Reset), or the `−` and `+` toolbar buttons. Syncs with the Format Sidebar font-size spinner.
+* **📊 Status Bar:** Shows current line/column, word count, character count, and file path. Word/character counts are debounced for performance on large files.
+* **⌨️ Keyboard Shortcuts:** Intuitive shortcuts for all common actions, including file operations, formatting, dock toggling, word wrap, and zoom. All shortcuts are displayed in menu items and tooltips.
 
 ---
 

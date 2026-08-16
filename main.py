@@ -13,11 +13,9 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtGui import (
     QAction, QKeySequence, QFont, QTextCharFormat, QFileSystemModel,
-    QPainter, QColor, QPixmap, QIcon,
+    QPainter, QColor, QPixmap, QIcon, QPaintEvent, QResizeEvent, QCloseEvent,
 )
 from PyQt6.QtCore import Qt, QSize, QRect, QSettings, QTimer, QByteArray
-from PyQt6.QtGui import QPaintEvent, QResizeEvent
-from PyQt6.QtGui import QCloseEvent
 
 COL_NAME, COL_SIZE, COL_TYPE, COL_DATE = 0, 1, 2, 3
 COLUMN_LABELS = {
@@ -160,6 +158,7 @@ QTextEdit {
     selection-background-color: rgba(10, 132, 255, 0.34);
     selection-color: #FFFFFF;
     font-size: 14px;
+    padding: 4px 8px;
 }
 
 /* ── Dock Widgets ──────────────────────────────────────────────────────── */
@@ -238,11 +237,18 @@ QStatusBar {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
         stop:0 #13131E, stop:1 #0F0F18);
     border-top: 1px solid rgba(0, 0, 0, 0.55);
-    color: rgba(255, 255, 255, 0.36);
+    color: rgba(255, 255, 255, 0.45);
     font-size: 11px;
     padding: 0 6px;
+    min-height: 24px;
 }
 QStatusBar::item { border: none; }
+QStatusBar QLabel {
+    color: rgba(255, 255, 255, 0.45);
+    font-size: 11px;
+    padding: 0 8px;
+    border-right: 1px solid rgba(255, 255, 255, 0.06);
+}
 
 /* ── Format Sidebar Panel ──────────────────────────────────────────────── */
 QWidget#formatPanel {
@@ -514,6 +520,7 @@ QTextEdit {
     selection-background-color: rgba(0, 122, 255, 0.18);
     selection-color: #1C1C1E;
     font-size: 14px;
+    padding: 4px 8px;
 }
 
 /* ── Dock Widgets ──────────────────────────────────────────────────────── */
@@ -594,8 +601,15 @@ QStatusBar {
     color: #8E8E93;
     font-size: 11px;
     padding: 0 6px;
+    min-height: 24px;
 }
 QStatusBar::item { border: none; }
+QStatusBar QLabel {
+    color: #8E8E93;
+    font-size: 11px;
+    padding: 0 8px;
+    border-right: 1px solid rgba(0, 0, 0, 0.08);
+}
 
 /* ── Format Sidebar Panel ──────────────────────────────────────────────── */
 QWidget#formatPanel { background: #F5F5FA; }
@@ -1068,6 +1082,14 @@ class PlainNotepad(QMainWindow):
         if self._theme_mode == "auto":
             self._auto_poll_timer.start()
 
+        # Debounced word count — only recalculate 400 ms after last keystroke
+        self._wc_timer = QTimer(self)
+        self._wc_timer.setSingleShot(True)
+        self._wc_timer.setInterval(400)
+        self._wc_timer.timeout.connect(self._do_word_count_update)
+
+        self._word_wrap: bool = True  # track word-wrap state
+
     # ══════════════════════════════════════════════════════════════════════════
     # Settings persistence
     # ══════════════════════════════════════════════════════════════════════════
@@ -1280,6 +1302,21 @@ class PlainNotepad(QMainWindow):
             view_menu.addAction(sb_toggle)
 
         view_menu.addSeparator()
+        self._wrap_action = self._make_action(
+            view_menu, "Word Wrap",
+            QKeySequence("Ctrl+Shift+W"), self._toggle_word_wrap)
+        self._wrap_action.setCheckable(True)
+        self._wrap_action.setChecked(True)
+
+        view_menu.addSeparator()
+        self._make_action(view_menu, "Zoom In",
+                          QKeySequence.StandardKey.ZoomIn, self._zoom_in)
+        self._make_action(view_menu, "Zoom Out",
+                          QKeySequence.StandardKey.ZoomOut, self._zoom_out)
+        self._make_action(view_menu, "Reset Zoom",
+                          QKeySequence("Ctrl+0"), self._zoom_reset)
+
+        view_menu.addSeparator()
         self._make_action(view_menu, "Save Layout Now",
                           callback=self._manual_save_layout)
 
@@ -1320,14 +1357,34 @@ class PlainNotepad(QMainWindow):
         self._sidebar_tb_action.setChecked(False)
         tb.addAction(self._sidebar_tb_action)
 
+        tb.addSeparator()
+
+        self._wrap_tb_action = self._make_tb_action(
+            "\u21a9  Wrap", self._toggle_word_wrap,
+            "Toggle word wrap  (Ctrl+Shift+W)", checkable=True)
+        self._wrap_tb_action.setChecked(True)
+        tb.addAction(self._wrap_tb_action)
+
+        tb.addSeparator()
+
+        tb.addAction(self._make_tb_action("\u2212", self._zoom_out, "Zoom out  (Ctrl+-)"))
+        tb.addAction(self._make_tb_action("+", self._zoom_in, "Zoom in  (Ctrl++)"))
+
     def _build_status_bar(self):
         sb = QStatusBar(self)
         self.setStatusBar(sb)
+
+        # Left side: file info (non-permanent = left-aligned)
+        self._status_file = QLabel("")
+        sb.addWidget(self._status_file)
+
+        # Right side: permanent labels with separator styling from QSS
         self._status_pos   = QLabel("Line 1,  Col 1")
         self._status_words = QLabel("Words: 0")
+        self._status_chars = QLabel("Chars: 0")
         self._status_enc   = QLabel("UTF-8")
-        for lbl in (self._status_pos, self._status_words, self._status_enc):
-            lbl.setStyleSheet("padding: 0 10px; font-size:11px;")
+        for lbl in (self._status_pos, self._status_words,
+                    self._status_chars, self._status_enc):
             sb.addPermanentWidget(lbl)
 
     def _build_explorer(self, root_path=None):
@@ -1364,7 +1421,7 @@ class PlainNotepad(QMainWindow):
         self.file_dock.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
         self.file_dock.setMinimumWidth(200)
         self.file_dock.visibilityChanged.connect(self._sync_explorer_action)
-        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, self.file_dock)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.file_dock)
         self.file_dock.hide()
 
     def _build_format_panel(self):
@@ -1560,6 +1617,9 @@ class PlainNotepad(QMainWindow):
         editor.file_path = path
         editor._gutter_dark = (self._theme_mode != "light") if self._theme_mode != "auto" \
             else self._detect_system_dark()
+        # Apply word-wrap state consistently
+        if not getattr(self, "_word_wrap", True):
+            editor.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
         doc = editor.document()
         if doc is not None:
             doc.setModified(False)
@@ -1618,10 +1678,26 @@ class PlainNotepad(QMainWindow):
         cursor = editor.textCursor()
         line   = cursor.blockNumber() + 1
         col    = cursor.columnNumber() + 1
-        text   = editor.toPlainText()
-        words  = len(text.split()) if text.strip() else 0
         self._status_pos.setText(f"Line {line},  Col {col}")
+        # Update file label
+        if hasattr(self, "_status_file"):
+            self._status_file.setText(
+                editor.file_path or "Untitled")
+        # Defer expensive word/char count
+        if hasattr(self, "_wc_timer"):
+            self._wc_timer.start()
+
+    def _do_word_count_update(self):
+        """Debounced: update word and character counts in the status bar."""
+        editor = self.current_editor()
+        if not editor:
+            return
+        text  = editor.toPlainText()
+        words = len(text.split()) if text.strip() else 0
+        chars = len(text)
         self._status_words.setText(f"Words: {words}")
+        if hasattr(self, "_status_chars"):
+            self._status_chars.setText(f"Chars: {chars}")
 
     # ══════════════════════════════════════════════════════════════════════════
     # Explorer dock
@@ -1891,6 +1967,64 @@ class PlainNotepad(QMainWindow):
             _sb.showMessage("Layout saved.", 3000)
 
     # ══════════════════════════════════════════════════════════════════════════
+    # Word wrap & Zoom
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def _toggle_word_wrap(self, checked: bool = False):
+        """Toggle word-wrap on all open editors."""
+        # Sync both the menu action and toolbar button
+        if hasattr(self, "_wrap_action"):
+            self._word_wrap = self._wrap_action.isChecked()
+        if hasattr(self, "_wrap_tb_action"):
+            self._wrap_tb_action.setChecked(self._word_wrap)
+        if hasattr(self, "_wrap_action"):
+            self._wrap_action.setChecked(self._word_wrap)
+
+        mode = (QTextEdit.LineWrapMode.WidgetWidth
+                if self._word_wrap
+                else QTextEdit.LineWrapMode.NoWrap)
+        for i in range(self.tab_widget.count()):
+            ed = self.tab_widget.widget(i)
+            if isinstance(ed, CodeEditor):
+                ed.setLineWrapMode(mode)
+
+    def _zoom_in(self):
+        """Increase font size of the current editor by 1 pt."""
+        editor = self.current_editor()
+        if editor:
+            font = editor.font()
+            font.setPointSize(min(font.pointSize() + 1, 144))
+            editor.setFont(font)
+            if hasattr(self, "font_size_spin"):
+                self.font_size_spin.blockSignals(True)
+                self.font_size_spin.setValue(font.pointSize())
+                self.font_size_spin.blockSignals(False)
+
+    def _zoom_out(self):
+        """Decrease font size of the current editor by 1 pt."""
+        editor = self.current_editor()
+        if editor:
+            font = editor.font()
+            font.setPointSize(max(font.pointSize() - 1, 6))
+            editor.setFont(font)
+            if hasattr(self, "font_size_spin"):
+                self.font_size_spin.blockSignals(True)
+                self.font_size_spin.setValue(font.pointSize())
+                self.font_size_spin.blockSignals(False)
+
+    def _zoom_reset(self):
+        """Reset font size of the current editor to 13 pt."""
+        editor = self.current_editor()
+        if editor:
+            font = editor.font()
+            font.setPointSize(13)
+            editor.setFont(font)
+            if hasattr(self, "font_size_spin"):
+                self.font_size_spin.blockSignals(True)
+                self.font_size_spin.setValue(13)
+                self.font_size_spin.blockSignals(False)
+
+    # ══════════════════════════════════════════════════════════════════════════
     # Lifecycle
     # ══════════════════════════════════════════════════════════════════════════
 
@@ -1945,7 +2079,7 @@ class PlainNotepad(QMainWindow):
     def show_about_dialog(self):
         QMessageBox.about(
             self, "About M-Pad",
-            "<h3>M-Pad v1.1</h3>"
+            "<h3>M-Pad v1.2</h3>"
             "<p>A lightweight text companion.</p>"
             "<hr>"
             "<p><b>Created by</b>: <i>Miran Kljun</i></p>"

@@ -2,19 +2,72 @@
 __pycache__/
 *.py[cod]
 *$py.class
+*.pyc
+*.pyo
+*.pyd
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+*.egg
+MANIFEST
+.eggs/
+wheels/
 
 # Virtual environments
 .venv/
 venv/
 ENV/
 env/
+env.bak/
+venv.bak/
+.python-version
+
+# Unit test / coverage
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.cache/
+nosetests.xml
+coverage.xml
+*.cover
+
+# Logs & temp files
+*.log
+*.tmp
+*.bak
+*.orig
+*~
 
 # IDE & Editors
 .vscode/
 .idea/
 *.swp
 *.swo
+*.sublime-project
+*.sublime-workspace
 
 # OS generated files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
 Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# Local runtime / user data
+*.db
+*.sqlite
+*.sqlite3
+
+# AUR / distro packaging artifacts
+*.tar.gz
+*.tar.xz
+*.tar.zst
+src/
+pkg/

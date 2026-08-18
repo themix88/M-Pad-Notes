@@ -1,8 +1,8 @@
 # Maintainer: Miran Kljun <miran.kljun@gmail.com>
 
 pkgname=m-pad
-pkgver=1.0
-pkgrel=1
+pkgver=1.2
+pkgrel=2
 pkgdesc="A lightweight text companion."
 arch=('any')
 url="https://github.com/themix88/M-Pad-Notes"

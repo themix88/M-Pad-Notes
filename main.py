@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import shutil
+from pathlib import Path
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QTextEdit, QTabWidget,
     QFileDialog, QMessageBox, QFontDialog, QTreeView,
@@ -15,7 +16,7 @@ from PyQt6.QtGui import (
     QAction, QKeySequence, QFont, QTextCharFormat, QFileSystemModel,
     QPainter, QColor, QPixmap, QIcon, QPaintEvent, QResizeEvent, QCloseEvent,
 )
-from PyQt6.QtCore import Qt, QSize, QRect, QSettings, QTimer, QByteArray
+from PyQt6.QtCore import Qt, QSize, QRect, QSettings, QTimer, QByteArray, QFileSystemWatcher
 
 COL_NAME, COL_SIZE, COL_TYPE, COL_DATE = 0, 1, 2, 3
 COLUMN_LABELS = {
@@ -39,8 +40,8 @@ DARK_THEME_QSS = """
 /* ═══ DARK THEME ═══════════════════════════════════════════════════ */
 
 * {
-    font-family: "SF Pro Text", "Inter", "Helvetica Neue", "Segoe UI",
-                 "Ubuntu", system-ui, sans-serif;
+    font-family: "JetBrains Mono", "SF Pro Text", "Inter", "Helvetica Neue",
+                 "Segoe UI", "Ubuntu", system-ui, sans-serif;
     font-size: 13px;
     color: rgba(255, 255, 255, 0.90);
 }
@@ -277,6 +278,8 @@ QToolButton#formatBtn {
     color: rgba(255, 255, 255, 0.84);
     padding: 0;
     min-width: 0;
+    font-style: italic;
+    text-align: center;
 }
 QToolButton#formatBtn:hover {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
@@ -413,8 +416,8 @@ LIGHT_THEME_QSS = """
 /* ═══ LIGHT THEME ══════════════════════════════════════════════════ */
 
 * {
-    font-family: "SF Pro Text", "Inter", "Helvetica Neue", "Segoe UI",
-                 "Ubuntu", system-ui, sans-serif;
+    font-family: "JetBrains Mono", "SF Pro Text", "Inter", "Helvetica Neue",
+                 "Segoe UI", "Ubuntu", system-ui, sans-serif;
     font-size: 13px;
     color: #1C1C1E;
 }
@@ -635,6 +638,8 @@ QToolButton#formatBtn {
     color: #1C1C1E;
     padding: 0;
     min-width: 0;
+    font-style: italic;
+    text-align: center;
 }
 QToolButton#formatBtn:hover {
     background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
@@ -822,9 +827,9 @@ class SettingsDialog(QDialog):
 
         grid.addWidget(QLabel("Color theme:"), 0, 0)
         self._theme_combo = QComboBox()
-        self._theme_combo.addItems(["Dark", "Light", "Auto (follow system)"])
+        self._theme_combo.addItems(["Dark", "Light", "Auto (follow system)", "Aether (follow Omarchy)"])
         mode = self._settings.get("theme_mode", "dark")
-        idx_map = {"dark": 0, "light": 1, "auto": 2}
+        idx_map = {"dark": 0, "light": 1, "auto": 2, "aether": 3}
         self._theme_combo.setCurrentIndex(idx_map.get(mode, 0))
         grid.addWidget(self._theme_combo, 0, 1)
 
@@ -869,7 +874,7 @@ class SettingsDialog(QDialog):
 
 
     def get_settings(self) -> dict:
-        mode_map = {0: "dark", 1: "light", 2: "auto"}
+        mode_map = {0: "dark", 1: "light", 2: "auto", 3: "aether"}
         return {
             "theme_mode": mode_map.get(self._theme_combo.currentIndex(), "dark"),
             "restore_layout": self._restore_layout_cb.isChecked(),
@@ -1024,16 +1029,18 @@ class CodeEditor(QTextEdit):
 
 class PlainNotepad(QMainWindow):
 
-    _THEME_CYCLE = {"dark": "light", "light": "auto", "auto": "dark"}
+    _THEME_CYCLE = {"dark": "light", "light": "auto", "auto": "aether", "aether": "dark"}
     _THEME_LABELS = {
-        "dark":  "☾  Dark",
-        "light": "☼  Light",
-        "auto":  "⊙  Auto",
+        "dark":   "☾  Dark",
+        "light":  "☼  Light",
+        "auto":   "⊙  Auto",
+        "aether": "◈  Aether",
     }
     _THEME_TIPS = {
-        "dark":  "Dark mode  —  click for Light",
-        "light": "Light mode  —  click for Auto",
-        "auto":  "Auto (follows system)  —  click for Dark",
+        "dark":   "Dark mode  —  click for Light",
+        "light":  "Light mode  —  click for Auto",
+        "auto":   "Auto (follows system)  —  click for Aether",
+        "aether": "Aether (follows Omarchy theme)  —  click for Dark",
     }
 
     def __init__(self):
@@ -1089,6 +1096,13 @@ class PlainNotepad(QMainWindow):
         self._wc_timer.timeout.connect(self._do_word_count_update)
 
         self._word_wrap: bool = True  # track word-wrap state
+
+        # ── Aether / Omarchy file watcher ──────────────────────────────────
+        self._aether_watcher = QFileSystemWatcher(self)
+        aether_path = str(self._AETHER_COLORS_PATH)
+        if self._AETHER_COLORS_PATH.exists():
+            self._aether_watcher.addPath(aether_path)
+        self._aether_watcher.fileChanged.connect(self._on_aether_theme_changed)
 
     # ══════════════════════════════════════════════════════════════════════════
     # Settings persistence
@@ -1163,9 +1177,33 @@ class PlainNotepad(QMainWindow):
             else:
                 self._auto_poll_timer.stop()
 
+            if self._theme_mode == "aether":
+                aether_path = str(self._AETHER_COLORS_PATH)
+                if (self._AETHER_COLORS_PATH.exists()
+                        and aether_path not in self._aether_watcher.files()):
+                    self._aether_watcher.addPath(aether_path)
+
     # ══════════════════════════════════════════════════════════════════════════
     # Theme management
     # ══════════════════════════════════════════════════════════════════════════
+
+    _AETHER_COLORS_PATH = Path.home() / ".config" / "aether" / "theme" / "colors.toml"
+
+    @staticmethod
+    def _read_aether_dark() -> bool | None:
+        """Read mode from ~/.config/aether/theme/colors.toml.
+        Returns True for dark, False for light, None if unavailable."""
+        path = PlainNotepad._AETHER_COLORS_PATH
+        try:
+            text = path.read_text(encoding="utf-8")
+            for line in text.splitlines():
+                line = line.strip()
+                if line.startswith("mode"):
+                    value = line.split("=", 1)[-1].strip().strip('"').strip("'")
+                    return value != "light"
+        except (OSError, ValueError):
+            pass
+        return None
 
     @staticmethod
     def _detect_system_dark() -> bool:
@@ -1183,7 +1221,13 @@ class PlainNotepad(QMainWindow):
 
     def _apply_theme(self):
         mode = self._theme_mode
-        dark = self._detect_system_dark() if mode == "auto" else (mode == "dark")
+        if mode == "aether":
+            aether = self._read_aether_dark()
+            dark = aether if aether is not None else True
+        elif mode == "auto":
+            dark = self._detect_system_dark()
+        else:
+            dark = (mode == "dark")
 
         _app = QApplication.instance()
         if isinstance(_app, QApplication):
@@ -1208,10 +1252,26 @@ class PlainNotepad(QMainWindow):
             self._auto_poll_timer.start()
         else:
             self._auto_poll_timer.stop()
+        # Re-arm the Aether watcher when switching into aether mode
+        if self._theme_mode == "aether":
+            aether_path = str(self._AETHER_COLORS_PATH)
+            if (self._AETHER_COLORS_PATH.exists()
+                    and aether_path not in self._aether_watcher.files()):
+                self._aether_watcher.addPath(aether_path)
 
     def _on_system_scheme_changed(self):
         if self._theme_mode == "auto":
             self._last_system_dark = self._detect_system_dark()
+            self._apply_theme()
+
+    def _on_aether_theme_changed(self, path: str):
+        """Called by QFileSystemWatcher when ~/.config/aether/theme/colors.toml changes.
+        Some editors replace the file atomically (unlink + write), so we re-watch it."""
+        aether_path = str(self._AETHER_COLORS_PATH)
+        if aether_path not in self._aether_watcher.files():
+            if self._AETHER_COLORS_PATH.exists():
+                self._aether_watcher.addPath(aether_path)
+        if self._theme_mode == "aether":
             self._apply_theme()
 
     def _poll_system_theme(self):
@@ -1613,7 +1673,7 @@ class PlainNotepad(QMainWindow):
 
     def create_tab(self, title="Untitled", path=None, content="", html=False):
         editor = CodeEditor()
-        editor.setFont(QFont("Consolas", 13))
+        editor.setFont(QFont("JetBrains Mono", 13))
         editor.file_path = path
         editor._gutter_dark = (self._theme_mode != "light") if self._theme_mode != "auto" \
             else self._detect_system_dark()

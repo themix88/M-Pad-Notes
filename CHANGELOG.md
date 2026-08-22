@@ -2,6 +2,16 @@
 
 All notable changes to the M-Pad project will be documented in this file.
 
+## [1.3] - 2026-08-22
+
+### Added
+- **Aether theme** — new theme option that reads colors from the active [Omarchy](https://github.com/basecamp/omarchy) palette (`~/.config/aether/theme/colors.toml`, falling back to `~/.local/state/omarchy/current/theme/colors.toml`). Generates a full application QSS dynamically from the palette, supporting both dark and light modes.
+- **Live theme reloading** — a `QFileSystemWatcher` monitors the Aether colors file and reapplies the theme automatically whenever the palette changes, without needing to restart the app.
+- `fontpkg-jetbrains-mono` added to `requirements.txt`.
+
+### Changed
+- Default editor font changed to **JetBrains Mono** (falls back to SF Pro Text → Inter → Segoe UI → Ubuntu → system-ui).
+
 ## [1.2] - 2026-08-16
 
 ### Added

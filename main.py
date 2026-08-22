@@ -1099,9 +1099,9 @@ class PlainNotepad(QMainWindow):
 
         # ── Aether / Omarchy file watcher ──────────────────────────────────
         self._aether_watcher = QFileSystemWatcher(self)
-        aether_path = str(self._AETHER_COLORS_PATH)
-        if self._AETHER_COLORS_PATH.exists():
-            self._aether_watcher.addPath(aether_path)
+        for _watch_path in (self._AETHER_COLORS_PATH, self._OMARCHY_COLORS_PATH):
+            if _watch_path.exists():
+                self._aether_watcher.addPath(str(_watch_path))
         self._aether_watcher.fileChanged.connect(self._on_aether_theme_changed)
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -1178,32 +1178,265 @@ class PlainNotepad(QMainWindow):
                 self._auto_poll_timer.stop()
 
             if self._theme_mode == "aether":
-                aether_path = str(self._AETHER_COLORS_PATH)
-                if (self._AETHER_COLORS_PATH.exists()
-                        and aether_path not in self._aether_watcher.files()):
-                    self._aether_watcher.addPath(aether_path)
+                for _p in (self._AETHER_COLORS_PATH, self._OMARCHY_COLORS_PATH):
+                    if _p.exists() and str(_p) not in self._aether_watcher.files():
+                        self._aether_watcher.addPath(str(_p))
 
     # ══════════════════════════════════════════════════════════════════════════
     # Theme management
     # ══════════════════════════════════════════════════════════════════════════
 
-    _AETHER_COLORS_PATH = Path.home() / ".config" / "aether" / "theme" / "colors.toml"
+    _AETHER_COLORS_PATH  = Path.home() / ".config" / "aether" / "theme" / "colors.toml"
+    _OMARCHY_COLORS_PATH = (Path.home() / ".local" / "state" / "omarchy"
+                            / "current" / "theme" / "colors.toml")
+
+    @staticmethod
+    def _read_aether_palette() -> dict | None:
+        """Parse all color keys from the active Aether / Omarchy colors.toml.
+        Tries ~/.config/aether/theme/colors.toml first, then falls back to
+        ~/.local/state/omarchy/current/theme/colors.toml.
+        Returns a dict mapping key → value strings, or None if unavailable."""
+        for path in (PlainNotepad._AETHER_COLORS_PATH,
+                     PlainNotepad._OMARCHY_COLORS_PATH):
+            if not path.exists():
+                continue
+            try:
+                text = path.read_text(encoding="utf-8")
+                result: dict = {}
+                for raw in text.splitlines():
+                    line = raw.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    if "=" in line:
+                        k, _, v = line.partition("=")
+                        result[k.strip()] = v.strip().strip('"').strip("'")
+                if result:
+                    return result
+            except (OSError, ValueError):
+                continue
+        return None
 
     @staticmethod
     def _read_aether_dark() -> bool | None:
-        """Read mode from ~/.config/aether/theme/colors.toml.
-        Returns True for dark, False for light, None if unavailable."""
-        path = PlainNotepad._AETHER_COLORS_PATH
-        try:
-            text = path.read_text(encoding="utf-8")
-            for line in text.splitlines():
-                line = line.strip()
-                if line.startswith("mode"):
-                    value = line.split("=", 1)[-1].strip().strip('"').strip("'")
-                    return value != "light"
-        except (OSError, ValueError):
-            pass
-        return None
+        """Return True for dark, False for light, None if unavailable."""
+        palette = PlainNotepad._read_aether_palette()
+        if palette is None:
+            return None
+        return palette.get("mode", "dark") != "light"
+
+    @staticmethod
+    def _build_aether_qss(palette: dict) -> str:
+        """Generate a full application QSS from an Aether/Omarchy palette dict."""
+        bg          = palette.get("background",         "#1e1e2e")
+        dark_bg     = palette.get("dark_background",    "#161622")
+        darker_bg   = palette.get("darker_background",  "#101019")
+        lighter_bg  = palette.get("lighter_background", "#313244")
+        fg          = palette.get("foreground",         "#cdd6f4")
+        dark_fg     = palette.get("dark_foreground",    "#6c7086")
+        accent      = palette.get("accent",             "#89b4fa")
+        selection   = palette.get("selection",          "#45475a")
+        muted       = palette.get("muted",              "#585b70")
+        is_dark     = palette.get("mode", "dark") != "light"
+
+        surface     = f"rgba(255,255,255,0.07)" if is_dark else f"rgba(0,0,0,0.05)"
+        border      = f"rgba(0,0,0,0.45)"       if is_dark else f"rgba(0,0,0,0.10)"
+        scrl_handle = f"rgba(255,255,255,0.18)" if is_dark else f"rgba(0,0,0,0.20)"
+
+        return f"""
+/* ═══ AETHER THEME  ({palette.get('mode','dark')}) ════════════════════════════ */
+* {{
+    font-family: "JetBrains Mono","SF Pro Text","Inter","Helvetica Neue",
+                 "Segoe UI","Ubuntu",system-ui,sans-serif;
+    font-size: 13px;
+    color: {fg};
+}}
+QMainWindow, QDialog {{ background-color: {bg}; }}
+QMenuBar {{
+    background: qlineargradient(x1:0,y1:0,x2:0,y2:1,
+        stop:0 {lighter_bg}, stop:1 {dark_bg});
+    border-bottom: 1px solid {border};
+    padding: 2px 6px; spacing: 2px; color: {fg};
+}}
+QMenuBar::item {{ padding: 4px 12px; border-radius: 6px; background: transparent; color: {fg}; }}
+QMenuBar::item:selected {{ background: {surface}; }}
+QMenuBar::item:pressed {{ background: {selection}; color: {accent}; }}
+QMenu {{
+    background-color: {lighter_bg};
+    border: 1px solid {surface};
+    padding: 5px 0; color: {fg};
+}}
+QMenu::item {{ padding: 6px 24px 6px 16px; }}
+QMenu::item:selected {{ background: {accent}; color: {bg}; }}
+QMenu::item:disabled {{ color: {muted}; }}
+QMenu::separator {{ height: 1px; background: {muted}; margin: 4px 0; }}
+QToolBar {{
+    background: qlineargradient(x1:0,y1:0,x2:0,y2:1,
+        stop:0 {lighter_bg}, stop:1 {dark_bg});
+    border-top: 1px solid {surface}; border-bottom: 1px solid {border};
+    spacing: 2px; padding: 4px 10px;
+}}
+QToolBar::separator {{ width: 1px; background: {muted}; margin: 4px 8px; }}
+QToolButton {{
+    border: none; border-radius: 7px; padding: 5px 12px;
+    background: transparent; font-size: 12px; font-weight: 500;
+    color: {fg}; min-width: 34px;
+}}
+QToolButton:hover {{ background: {surface}; border: 1px solid {muted}; }}
+QToolButton:pressed {{ background: {selection}; border: 1px solid {accent}; color: {accent}; }}
+QToolButton:checked {{ background: {selection}; border: 1px solid {accent}; color: {accent}; }}
+QTabWidget::pane {{ border: none; background: {bg}; }}
+QTabBar {{ background: {dark_bg}; }}
+QTabBar::tab {{
+    background: transparent; color: {dark_fg}; border: none;
+    border-right: 1px solid {surface};
+    padding: 8px 20px 8px 16px; font-size: 12px;
+    min-width: 120px; max-width: 210px;
+}}
+QTabBar::tab:selected {{
+    background: qlineargradient(x1:0,y1:0,x2:0,y2:1,
+        stop:0 {lighter_bg}, stop:1 {bg});
+    color: {fg}; font-weight: 500; border-top: 2px solid {accent};
+}}
+QTabBar::tab:hover:!selected {{ background: {surface}; color: {fg}; }}
+QTabBar::close-button {{ subcontrol-position: right; padding: 2px; }}
+QTextEdit {{
+    background-color: {bg}; color: {fg}; border: none;
+    selection-background-color: {selection}; selection-color: {fg};
+    font-size: 14px; padding: 4px 8px;
+}}
+QDockWidget {{ color: {dark_fg}; font-size: 11px; font-weight: 600; }}
+QDockWidget::title {{
+    background: qlineargradient(x1:0,y1:0,x2:0,y2:1,
+        stop:0 {lighter_bg}, stop:1 {dark_bg});
+    padding: 7px 12px; border-top: 1px solid {surface};
+    border-bottom: 1px solid {border};
+    text-align: left; letter-spacing: 0.5px;
+    text-transform: uppercase; color: {dark_fg};
+}}
+QDockWidget::close-button, QDockWidget::float-button {{
+    border: none; background: transparent; padding: 2px;
+}}
+QDockWidget::close-button:hover, QDockWidget::float-button:hover {{
+    background: {surface};
+}}
+QTreeView {{
+    background: {dark_bg}; alternate-background-color: {darker_bg};
+    border: none; outline: none; font-size: 12px; color: {fg};
+    show-decoration-selected: 1;
+}}
+QTreeView::item {{ padding: 4px; min-height: 24px; }}
+QTreeView::item:selected {{ background: {accent}; color: {bg}; }}
+QTreeView::item:hover:!selected {{ background: {surface}; }}
+QHeaderView {{ background: {lighter_bg}; }}
+QHeaderView::section {{
+    background: qlineargradient(x1:0,y1:0,x2:0,y2:1,
+        stop:0 {lighter_bg}, stop:1 {dark_bg});
+    color: {dark_fg}; border: none;
+    border-bottom: 1px solid {border};
+    border-right: 1px solid {surface};
+    padding: 5px 10px; font-size: 11px; font-weight: 600;
+}}
+QHeaderView::section:last {{ border-right: none; }}
+QHeaderView::section:hover {{ background: {surface}; }}
+QScrollBar:vertical {{ background: transparent; width: 8px; margin: 0; }}
+QScrollBar::handle:vertical {{
+    background: {scrl_handle}; border-radius: 4px;
+    min-height: 24px; margin: 0 1px;
+}}
+QScrollBar::handle:vertical:hover {{ background: {accent}; }}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: none; height: 0; }}
+QScrollBar:horizontal {{ background: transparent; height: 8px; margin: 0; }}
+QScrollBar::handle:horizontal {{
+    background: {scrl_handle}; border-radius: 4px;
+    min-width: 24px; margin: 1px 0;
+}}
+QScrollBar::handle:horizontal:hover {{ background: {accent}; }}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal,
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{ background: none; width: 0; }}
+QScrollBar::corner {{ background: transparent; }}
+QStatusBar {{
+    background: qlineargradient(x1:0,y1:0,x2:0,y2:1,
+        stop:0 {dark_bg}, stop:1 {darker_bg});
+    border-top: 1px solid {border}; color: {dark_fg};
+    font-size: 11px; padding: 0 6px; min-height: 24px;
+}}
+QStatusBar::item {{ border: none; }}
+QStatusBar QLabel {{
+    color: {dark_fg}; font-size: 11px; padding: 0 8px;
+    border-right: 1px solid {surface};
+}}
+QWidget#formatPanel {{
+    background: qlineargradient(x1:0,y1:0,x2:1,y2:1,
+        stop:0 {dark_bg}, stop:1 {bg});
+}}
+QLabel#panelSection {{
+    color: {dark_fg}; font-size: 10px; font-weight: 700;
+    letter-spacing: 1px; text-transform: uppercase;
+}}
+QLabel#panelFieldLabel {{ color: {dark_fg}; font-size: 12px; }}
+QFrame#panelDivider {{ background: {muted}; border: none; max-height: 1px; color: {muted}; }}
+QToolButton#formatBtn {{
+    border: 1px solid {muted}; border-radius: 8px; background: {surface};
+    color: {fg}; padding: 0; min-width: 0; font-style: italic; text-align: center;
+}}
+QToolButton#formatBtn:hover {{ background: {selection}; border-color: {accent}; }}
+QToolButton#formatBtn:checked {{ background: {selection}; border-color: {accent}; color: {accent}; }}
+QToolButton#panelLink {{
+    border: none; background: transparent; color: {accent};
+    font-size: 12px; padding: 2px 0; text-align: left; min-width: 0;
+}}
+QToolButton#panelLink:hover {{ color: {fg}; }}
+QFontComboBox, QComboBox {{
+    border: 1px solid {muted}; border-radius: 7px; padding: 5px 8px;
+    background: {lighter_bg}; color: {fg}; font-size: 12px; min-height: 28px;
+}}
+QFontComboBox:focus, QComboBox:focus {{ border-color: {accent}; background: {selection}; }}
+QFontComboBox::drop-down, QComboBox::drop-down {{ border: none; width: 20px; }}
+QFontComboBox QAbstractItemView, QComboBox QAbstractItemView {{
+    background: {lighter_bg}; border: 1px solid {muted};
+    color: {fg}; selection-background-color: {accent}; selection-color: {bg};
+}}
+QSpinBox {{
+    border: 1px solid {muted}; border-radius: 7px; padding: 5px 8px;
+    background: {lighter_bg}; color: {fg}; font-size: 12px; min-height: 28px;
+}}
+QSpinBox:focus {{ border-color: {accent}; }}
+QSpinBox::up-button, QSpinBox::down-button {{ border: none; background: transparent; width: 18px; }}
+QLineEdit {{
+    background: {lighter_bg}; border: 1px solid {muted}; border-radius: 7px;
+    padding: 6px 10px; color: {fg}; font-size: 13px;
+    selection-background-color: {selection};
+}}
+QLineEdit:focus {{ border-color: {accent}; }}
+QPushButton {{
+    background: {accent}; color: {bg}; border: 1px solid {accent};
+    border-radius: 7px; padding: 7px 18px; font-size: 13px;
+    font-weight: 500; min-width: 72px;
+}}
+QPushButton:hover {{ background: {selection}; color: {accent}; border-color: {accent}; }}
+QPushButton:pressed {{ background: {darker_bg}; color: {accent}; }}
+QPushButton:default {{ border-color: {accent}; }}
+QMessageBox {{ background: {lighter_bg}; }}
+QMessageBox QLabel {{ color: {fg}; }}
+QDialog {{ background: {bg}; }}
+QGroupBox {{
+    border: 1px solid {muted}; border-radius: 8px;
+    margin-top: 14px; padding: 16px 12px 12px 12px;
+    font-weight: 600; color: {fg};
+}}
+QGroupBox::title {{
+    subcontrol-origin: margin; subcontrol-position: top left;
+    left: 12px; padding: 0 6px; color: {dark_fg};
+}}
+QCheckBox {{ spacing: 8px; color: {fg}; font-size: 12px; }}
+QCheckBox::indicator {{
+    width: 16px; height: 16px; border: 1px solid {muted};
+    border-radius: 4px; background: {lighter_bg};
+}}
+QCheckBox::indicator:checked {{ background: {accent}; border-color: {accent}; }}
+QCheckBox::indicator:hover {{ border-color: {fg}; }}
+"""
 
     @staticmethod
     def _detect_system_dark() -> bool:
@@ -1221,17 +1454,27 @@ class PlainNotepad(QMainWindow):
 
     def _apply_theme(self):
         mode = self._theme_mode
+        qss: str
+        dark: bool
         if mode == "aether":
-            aether = self._read_aether_dark()
-            dark = aether if aether is not None else True
+            palette = self._read_aether_palette()
+            if palette is not None:
+                qss  = self._build_aether_qss(palette)
+                dark = palette.get("mode", "dark") != "light"
+            else:
+                # Fallback to generic dark if colors.toml is unavailable
+                qss  = DARK_THEME_QSS
+                dark = True
         elif mode == "auto":
             dark = self._detect_system_dark()
+            qss  = DARK_THEME_QSS if dark else LIGHT_THEME_QSS
         else:
             dark = (mode == "dark")
+            qss  = DARK_THEME_QSS if dark else LIGHT_THEME_QSS
 
         _app = QApplication.instance()
         if isinstance(_app, QApplication):
-            _app.setStyleSheet(DARK_THEME_QSS if dark else LIGHT_THEME_QSS)
+            _app.setStyleSheet(qss)
 
         for i in range(self.tab_widget.count()):
             ed = self.tab_widget.widget(i)
@@ -1254,10 +1497,9 @@ class PlainNotepad(QMainWindow):
             self._auto_poll_timer.stop()
         # Re-arm the Aether watcher when switching into aether mode
         if self._theme_mode == "aether":
-            aether_path = str(self._AETHER_COLORS_PATH)
-            if (self._AETHER_COLORS_PATH.exists()
-                    and aether_path not in self._aether_watcher.files()):
-                self._aether_watcher.addPath(aether_path)
+            for _p in (self._AETHER_COLORS_PATH, self._OMARCHY_COLORS_PATH):
+                if _p.exists() and str(_p) not in self._aether_watcher.files():
+                    self._aether_watcher.addPath(str(_p))
 
     def _on_system_scheme_changed(self):
         if self._theme_mode == "auto":
@@ -1265,12 +1507,12 @@ class PlainNotepad(QMainWindow):
             self._apply_theme()
 
     def _on_aether_theme_changed(self, path: str):
-        """Called by QFileSystemWatcher when ~/.config/aether/theme/colors.toml changes.
+        """Called by QFileSystemWatcher when the Aether/Omarchy colors.toml changes.
         Some editors replace the file atomically (unlink + write), so we re-watch it."""
-        aether_path = str(self._AETHER_COLORS_PATH)
-        if aether_path not in self._aether_watcher.files():
-            if self._AETHER_COLORS_PATH.exists():
-                self._aether_watcher.addPath(aether_path)
+        # Re-arm whichever path fired (atomic rename drops the watch)
+        for _p in (self._AETHER_COLORS_PATH, self._OMARCHY_COLORS_PATH):
+            if _p.exists() and str(_p) not in self._aether_watcher.files():
+                self._aether_watcher.addPath(str(_p))
         if self._theme_mode == "aether":
             self._apply_theme()
 

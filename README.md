@@ -11,7 +11,7 @@ M-Pad is a lightweight, blazing-fast, and customizable tabbed text companion bui
 
 ## 🚀 Features
 
-* **🎨 UI:** Seamless light, dark, and auto theme switching. Theme adapts to system preference when set to Auto.
+* **🎨 UI:** Seamless light, dark, auto, and **Aether** theme switching. Theme adapts to system preference when set to Auto. **Aether** mode follows the active [Omarchy](https://omarchy.org) theme in real time — every background, foreground, accent, and surface colour is sourced directly from `~/.local/state/omarchy/current/theme/colors.toml` and applied as a fully generated stylesheet (implemented by Claude Opus 4.6 Thinking).
 * **📂 Tabbed Interface:** Work on multiple files simultaneously with intelligent save prompts. (It's just fancy wording, it asks you to save before closing the files)
 * **🌳 Integrated File Explorer:** Left-docked interactive directory tree for rapid system navigation, supporting drag-and-drop layout configuration. Dock visibility and position can be saved between sessions.
 * **📝 Rich Formatting Sidebar:** Right-docked panel for styling (font family, size, alignment, bold, italic, and underline). Also supports drag-and-drop layout configuration.
